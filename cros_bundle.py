@@ -35,6 +35,8 @@ _PREFIX = 'http://chromeos-images/chromeos-official'
 _EC_NAME = 'ec.bin'
 _BIOS_NAME = 'bios.bin'
 _MOUNT_POINT = '/tmp/m'
+# TODO(benwin) update to production value once it is determined
+_GSD_BUCKET = 'gs://chromeos-download-test'
 
 
 class UrlLister(SGMLParser):
@@ -126,6 +128,21 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False):
   return cmd_result
 
 
+def UploadToGsd(filename):
+  """Uploads a file or directory to Google Storage for Developers
+
+  Assuming proper keys for gsutil are set up for current user.
+
+  Args:
+    filename: absolute path name of file or directory to upload
+  Throws:
+    BundlingError when file specified by filename does not exist
+  """
+  if not (filename and os.path.exists(filename)):
+    raise BundlingError('File %s does not exist.' % filename)
+  RunCommand(['gsutil', 'cp', filename, _GSD_BUCKET])
+
+
 def IsInsideChroot():
   """Returns True if we are inside chroot.
 
@@ -157,12 +174,12 @@ def CheckMd5(filename):
     if len(md5_contents):
       golden_digest_and_more = md5_contents.split(' ')
       if len(golden_digest_and_more):
-        logging.debug('MD5 checksum match succeeded for %s' % filename)
+        logging.debug('MD5 checksum match succeeded for %s', filename)
         return golden_digest_and_more[0] == hasher.hexdigest()
-    logging.warning('MD5 checksum match failed for %s' % filename)
+    logging.warning('MD5 checksum match failed for %s', filename)
     return False
   except IOError:
-    logging.warning('MD5 checksum match failed for %s' % filename)
+    logging.warning('MD5 checksum match failed for %s', filename)
     return False
   finally:
     if file_to_check:
@@ -188,7 +205,7 @@ def DetermineUrl(url, pattern):
   try:
     usock = urllib.urlopen(url)
   except IOError:
-    logging.warning('Could not open %s.' % url)
+    logging.warning('Could not open %s.', url)
     return None
   parser = UrlLister()
   parser.feed(usock.read())
@@ -198,9 +215,9 @@ def DetermineUrl(url, pattern):
     matches = [u for u in parser.urls if pat.search(u)]
     if len(matches):
       if len(matches) > 1:
-        logging.warning('More than one resource matching %s found.' % pattern)
+        logging.warning('More than one resource matching %s found.', pattern)
         for match in matches[1:]:
-          logging.warning('Additional match %s found.' % match)
+          logging.warning('Additional match %s found.', match)
       return '/'.join([url, matches[0]])
   return None
 
@@ -225,7 +242,7 @@ def Download(url):
     local_file.write(web_file.read())
     return True
   except IOError:
-    logging.warning('Could not open %s or writing %s failed.' %
+    logging.warning('Could not open %s or writing %s failed.',
                     (url, local_file))
     return False
   finally:
@@ -251,7 +268,7 @@ def ZipExtract(zipname, filename, path=os.getcwd()):
     zpf.close()
     return True
   except KeyError:
-    logging.warning('Could not find %s to extract from %s.' %
+    logging.warning('Could not find %s to extract from %s.',
                     (filename, zipname))
     return False
 
@@ -264,25 +281,25 @@ def MakeTar(target_dir, destination_dir, name=None):
     destination_dir: directory in which to put tar file
     name: filename without directory path of tar file to create
   Returns:
-    a boolean, True when tar file is successfully created
+    a string, the basename of the tar created or None on failure
   """
   if not (target_dir and os.path.isdir(target_dir)):
     logging.error('Tar target directory does not exist.')
-    return False
+    return None
   if not (destination_dir and os.path.isdir(destination_dir)):
     logging.error('Tar destination directory does not exist.')
-    return False
+    return None
   if not os.access(destination_dir, os.W_OK):
     logging.error('Tar destination directory %s not writable.',
                   destination_dir)
-    return False
+    return None
   folder_name = target_dir.split(os.sep)[-1]
   if not name:
     name = folder_name + '.tar.bz2'
   tar = tarfile.open(os.path.join(destination_dir, name), mode='w:bz2')
   tar.add(target_dir, arcname=folder_name)
   tar.close()
-  return True
+  return name
 
 
 def CheckEnvironment(image_name, firmware_dest, mount_point):
@@ -315,18 +332,18 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
     res = False
   if (not os.path.isfile(image_name) or
       not re.search('.*ssd.*[.]bin$', image_name)) :
-    logging.error('Bad SSD image name given : %s' % image_name)
+    logging.error('Bad SSD image name given : %s', image_name)
     res = False
   if not os.path.isdir(firmware_dest):
-    logging.error('Firmware destination directory %s does not exist!' %
+    logging.error('Firmware destination directory %s does not exist!',
                   firmware_dest)
     res = False
   if not os.access(firmware_dest, os.W_OK):
-    logging.error('Firmware destination directory %s not writable.' %
+    logging.error('Firmware destination directory %s not writable.',
                   firmware_dest)
     res = False
   if os.path.isdir(mount_point) and os.listdir(mount_point):
-    logging.error('Mount point %s is not emtpy!' % mount_point)
+    logging.error('Mount point %s is not emtpy!', mount_point)
     res = False
   return res
 
@@ -514,6 +531,8 @@ def MakeFactoryBundle(image_names, fsi, firmware, version, mount_point,
     bundle_dir: destination directory for factory bundle files
     tar_dir: destination directory for factory bundle tar file
     del_ok: a boolean, True when any existing bundle files can be deleted
+  Returns:
+    a string, the absolute path name of the factory bundle tar created
   Throws:
     BundlingError on bad input, inability to write, or firmware extract fail.
   """
@@ -538,9 +557,9 @@ def MakeFactoryBundle(image_names, fsi, firmware, version, mount_point,
               bundle_dir)
   os.mkdir(bundle_dir)
   if not(tar_dir and os.path.isdir(tar_dir)):
-      logging.warning('Provided directory %s does not exist, using %s',
-                      tar_dir, _TMPDIR)
-      tar_dir = _TMPDIR
+    logging.warning('Provided directory %s does not exist, using %s',
+                    tar_dir, _TMPDIR)
+    tar_dir = _TMPDIR
   else:
     tar_dir = _TMPDIR
   if firmware:
@@ -553,7 +572,7 @@ def MakeFactoryBundle(image_names, fsi, firmware, version, mount_point,
                 firmware_dest)
     os.mkdir(firmware_dest)
     if ExtractFirmware(ssd_name, firmware_dest, mount_point):
-      logging.info('Successfully extracted firmware to %s' % firmware_dest)
+      logging.info('Successfully extracted firmware to %s', firmware_dest)
     else:
       raise BundlingError('Failed to extract firmware from SSD image %s.' %
                           ssd_name)
@@ -562,10 +581,13 @@ def MakeFactoryBundle(image_names, fsi, firmware, version, mount_point,
   if not fsi:
     # TODO(benwin) copy install shim into bundle_dir
     shutil.copy(fac_name, bundle_dir)
-  logging.info('Completed copying factory bundle files to %s' % bundle_dir)
-  if not MakeTar(bundle_dir, tar_dir):
+  logging.info('Completed copying factory bundle files to %s', bundle_dir)
+  tarname = MakeTar(bundle_dir, tar_dir)
+  if not tarname:
     raise BundlingError('Failed to create tar file of bundle directory.')
-  logging.info('Completed creating factory bundle tar file in %s.' % _TMPDIR)
+  logging.info('Completed creating factory bundle tar file in %s.', _TMPDIR)
+  abstarname = os.path.join(tar_dir, tarname)
+  return abstarname
 
 
 def GetReleaseName(board, release):
@@ -640,7 +662,7 @@ def DownloadCheckMd5(url, path, desc):
   if (os.path.exists(name) and
       os.path.exists(name + '.md5') and
       CheckMd5(name)):
-    logging.info('Resource %s already exists with good MD5, skipping fetch.' %
+    logging.info('Resource %s already exists with good MD5, skipping fetch.',
                  name)
   else:
     logging.info('Downloading ' + url)
@@ -691,7 +713,7 @@ def FetchImages(board, release, factory, recovery, fsi):
     # Factory
     fac_name = os.path.join(_TMPDIR, fac_url.split('/')[-1])
     if os.path.exists(fac_name):
-      logging.info('Resource %s already exists, skipping fetch.' %
+      logging.info('Resource %s already exists, skipping fetch.',
                    fac_name)
     else:
       logging.info('Downloading ' + fac_url)
@@ -700,7 +722,7 @@ def FetchImages(board, release, factory, recovery, fsi):
     factorybin = os.path.join('factory_test', 'chromiumos_factory_image.bin')
     absfactorybin = os.path.join(_TMPDIR, factorybin)
     if os.path.exists(absfactorybin):
-      logging.info('Resource %s already present, skipping zip extraction.' %
+      logging.info('Resource %s already present, skipping zip extraction.',
                    absfactorybin)
     else:
       logging.info('Extracting factory image binary')
@@ -716,11 +738,11 @@ def FetchImages(board, release, factory, recovery, fsi):
   return image_names
 
 
-def main():
-  """Main method to initiate fetching and processing of bundle components.
+def HandleParseOptions():
+  """Configures and retrieves options from option parser.
 
-  Throws:
-    BundlingError when image fetch or bundle processing fail.
+  Returns:
+    a dict, the options given to the script
   """
   parser = OptionParser()
   parser.add_option('-b', '--board', action='store', type='string',
@@ -753,6 +775,16 @@ def main():
   parser.add_option('--tar_dir', action='store', dest='tar_dir',
                     help='destination directory for factory bundle tar')
   (options, args) = parser.parse_args()
+  return options
+
+
+def main():
+  """Main method to initiate fetching and processing of bundle components.
+
+  Throws:
+    BundlingError when image fetch or bundle processing fail.
+  """
+  options = HandleParseOptions()
   if IsInsideChroot():
     logging.error('Please run this script outside the chroot environment.')
     exit()
@@ -764,9 +796,11 @@ def main():
                              options.recovery, options.fsi)
   if not options.mount_point:
     mount_point = _MOUNT_POINT
-  MakeFactoryBundle(image_names, options.fsi, options.fw, options.version,
-                    mount_point, options.bundle_dir, options.tar_dir,
-                    options.force)
+  tarname = MakeFactoryBundle(image_names, options.fsi, options.fw,
+                              options.version, mount_point,
+                              options.bundle_dir, options.tar_dir,
+                              options.force)
+  UploadToGsd(tarname)
 
 
 if __name__ == "__main__":
