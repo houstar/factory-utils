@@ -12,19 +12,20 @@ Names bundle factory_bundle_yyyy_mm_dd.tar.bz2
 Two bundles in one day can cause naming conflicts, deleting all stored files
   with option --clean is recommended between uses on a single day.
 
-Usage: to download and repackage factory bundle files
+Usage: to download and repackage factory bundle files, convert recovery to ssd
        cd /home/$USER/chromiumos/src/scripts
-       python cros_bundle.py --board x86-alex --release 0.11.257.90/stable/mp
-       --factory 0.11.257.90/stable --shim 0.11.241.28/dev/mp
-       --recovery 0.11.257.90/stable/mp
+       python ../platform/factory-utils/cros_bundle.py
+       --board x86-alex --recovery 0.12.433.257/stable/mp
+       --factory 0.12.433.257/stable
 
        -OR-
 
-       to download and repackage factory bundle files with multiple images
-       python /home/$USER/chromiumos/src/platform/factory-utils/cros_bundle.py
+       to download and repackage factory bundle files with multiple images,
+         converting recovery to ssd for both images
+       cd /home/$USER/chromiumos/src/scripts
+       python ../platform/factory-utils/cros_bundle.py
        --board x86-alex --recovery 0.12.433.257/stable/mp
        --board2 x86-alex-nogobi --recovery2 0.12.433.257/stable/mp
-       --release 0.12.433.257/stable/mp --release2 0.12.433.257/stable/mp
        --factory 0.12.433.257/stable
 
        -OR-
@@ -39,31 +40,33 @@ Usage: to download and repackage factory bundle files
 """
 
 import datetime
+import formatter
 import hashlib
 import logging
 import os
 import re
 import shutil
 import subprocess
-import sys
-import tarfile
-import time
 import urllib
 import zipfile
 
 from optparse import OptionParser
-from sgmllib import SGMLParser
+from htmllib import HTMLParser
 
 _TMPDIR = '/usr/local/google/cros_bundle/tmp'
 _PREFIX = 'http://chromeos-images/chromeos-official'
 _EC_NAME = 'ec.bin'
 _BIOS_NAME = 'bios.bin'
 _MOUNT_POINT = '/tmp/m'
+_GITURL = 'http://git.chromium.org/chromiumos/platform/vboot_reference.git'
+_GITDIR = os.path.join(_TMPDIR, 'vboot_reference')
 # TODO(benwin) update to production value once it is determined
 _GSD_BUCKET = 'gs://chromeos-download-test'
+_AU_GEN = 'au-generator.zip'
+_SUDO_DIR = '/usr/local/sbin'
 
 
-class UrlLister(SGMLParser):
+class UrlLister(HTMLParser):
 
   """List all hyperlinks found on an html page.
 
@@ -76,16 +79,16 @@ class UrlLister(SGMLParser):
   <a href="http://google.com/">Google</a> -> "http://google.com"
   <a href="my_filename_here.zip">My file!</a> -> "my_filename_here.zip"
 
-  Borrowed from http://diveintopython.org/html_processing/extracting_data.html
+  Modified from http://diveintopython.org/html_processing/extracting_data.html
   """
 
-  def __init__(self):
-    SGMLParser.__init__(self)
+  def __init__(self, given_formatter):
+    HTMLParser.__init__(self, given_formatter)
     self.urls = []
 
   def reset(self):
     """Reset the parser to clean state."""
-    SGMLParser.reset(self)
+    HTMLParser.reset(self)
     self.urls = []
 
   def start_a(self, attrs):
@@ -125,7 +128,7 @@ class CommandResult(object):
     self.returncode = None
 
 
-def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False):
+def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False, cwd=None):
   """Runs a command using subprocess module Popen.
 
   Blocks until command returns.
@@ -134,6 +137,8 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False):
   Args:
     cmd: a list of arguments to Popen
     redirect_stdout: a boolean, True when subprocess output should be returned
+    redirect_stderr: a boolean, True when subprocess errors should be returned
+    cwd: working directory in which to run command
   Returns:
     a CommandResult object.
   Raises:
@@ -150,7 +155,11 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False):
   if redirect_stderr:
     stderr = subprocess.PIPE
 
-  proc = subprocess.Popen(cmd, stdout=stdout, stderr=stderr)
+  try:
+    proc = subprocess.Popen(cmd, cwd=cwd, stdout=stdout, stderr=stderr)
+  except OSError as (errno, strerror):
+    raise BundlingError('\n'.join(['OSError [%d] : %s' % (errno, strerror),
+                                   'OSError running cmd %s' % ' '.join(cmd)]))
   (cmd_result.output, cmd_result.error) = proc.communicate()
   cmd_result.returncode = proc.returncode
   if proc.returncode:
@@ -197,25 +206,45 @@ def CheckMd5(filename):
   """
   try:
     hasher = hashlib.md5()
-    file_to_check = open(filename)
-    for chunk in iter(lambda: file_to_check.read(128*hasher.block_size), ''):
-      hasher.update(chunk)
-    golden_file = open(filename + '.md5')
-    md5_contents = golden_file.read()
-    if len(md5_contents):
-      golden_digest_and_more = md5_contents.split(' ')
-      if len(golden_digest_and_more):
-        return golden_digest_and_more[0] == hasher.hexdigest()
-    logging.warning('MD5 checksum match failed for %s', filename)
-    return False
+    with open(filename) as check_file:
+      with open(filename + '.md5') as golden_file:
+        for chunk in iter(lambda: check_file.read(128*hasher.block_size), ''):
+          hasher.update(chunk)
+        md5_contents = golden_file.read()
+        if len(md5_contents):
+          golden_digest_and_more = md5_contents.split(' ')
+          if len(golden_digest_and_more):
+            return golden_digest_and_more[0] == hasher.hexdigest()
+        logging.warning('MD5 checksum match failed for %s', filename)
+        return False
   except IOError:
     logging.warning('MD5 checksum match failed for %s', filename)
     return False
-  finally:
-    if file_to_check:
-      file_to_check.close()
-    if golden_file:
-      golden_file.close()
+
+
+def MakeMd5(filename):
+  """Generates an MD5 checksum for a file.
+
+  Create file in same directory as provided file, appending '.md5' to name.
+  Assuming directory containing file is writable.
+
+  Args:
+    filename: absolute path name of file to hash
+  Returns:
+    a boolean, True when md5checksum file is successfully created
+  """
+  try:
+    with open(filename, 'r') as read_file:
+      with open(filename + '.md5', 'w') as hash_file:
+        hasher = hashlib.md5()
+        for chunk in iter(lambda: read_file.read(128*hasher.block_size), ''):
+          hasher.update(chunk)
+        hash_file.write(hasher.hexdigest())
+        return True
+  except IOError:
+    logging.error('Failed to compute md5 checksum for file %s.',
+                  filename)
+    return False
 
 
 def DetermineUrl(url, pattern):
@@ -237,7 +266,8 @@ def DetermineUrl(url, pattern):
   except IOError:
     logging.warning('Could not open %s.', url)
     return None
-  parser = UrlLister()
+  htmlformatter = formatter.NullFormatter()
+  parser = UrlLister(htmlformatter)
   parser.feed(usock.read())
   usock.close()
   parser.close()
@@ -307,7 +337,7 @@ def MakeTar(target_dir, destination_dir, name=None):
   """Creates a tar.bz2 archive of a target directory.
 
   Args:
-    target_dir: directory with contents to tar
+    target_dir: absolute path to directory with contents to tar
     destination_dir: directory in which to put tar file
     name: filename without directory path of tar file to create
   Returns:
@@ -326,9 +356,11 @@ def MakeTar(target_dir, destination_dir, name=None):
   folder_name = target_dir.split(os.sep)[-1]
   if not name:
     name = folder_name + '.tar.bz2'
-  tar = tarfile.open(os.path.join(destination_dir, name), mode='w:bz2')
-  tar.add(target_dir, arcname=folder_name)
-  tar.close()
+  # use pbzip2 for speed
+  name = os.path.join(destination_dir, name)
+  parent_dir = target_dir[0:target_dir.rfind(os.sep)]
+  RunCommand(['tar', '-c', '-I', 'pbzip2', folder_name, '-f', name],
+             cwd=parent_dir)
   return name
 
 
@@ -385,6 +417,8 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
 def ListFirmware(image_name, cros_fw):
   """Get list of strings representing contents of firmware.
 
+  Only handles Alex firmware at present.
+
   Args:
     image_name: absolute file path to SSD release image binary
     cros_fw: absolute path of firmware extraction script
@@ -409,17 +443,19 @@ def ListFirmware(image_name, cros_fw):
   if _BIOS_NAME not in firmfiles:
     raise BundlingError('Necessary file bios.bin missing from %s.' % cros_fw)
   ec_name = _EC_NAME
-  ec_searches = [re.search('EC image:.*', line) for line in lines]
-  ec_matches = [match.group() for match in ec_searches if match]
+  ec_pat = re.compile('EC image:.*(Alex.*)')
+  ec_searches = [ec_pat.search(line) for line in lines]
+  ec_matches = [match.group(1) for match in ec_searches if match]
   if len(ec_matches):
-    ec_name = ec_matches[0].split('/')[-1]
+    ec_name = ec_matches[0]
   else:
     logging.warning('Proper renaming of ec.bin firmware failed.')
   bios_name = _BIOS_NAME
-  bios_searches = [re.search('BIOS image:.*', line) for line in lines]
-  bios_matches = [match.group() for match in bios_searches if match]
+  bios_pat = re.compile('BIOS image:.*(Alex.*)')
+  bios_searches = [bios_pat.search(line) for line in lines]
+  bios_matches = [match.group(1) for match in bios_searches if match]
   if len(bios_matches):
-    bios_name = bios_matches[0].split('/')[-1]
+    bios_name = bios_matches[0]
   else:
     logging.warning('Proper renaming of bios.bin firmware failed.')
   return (ec_name, bios_name)
@@ -434,7 +470,7 @@ def ExtractFiles(cros_fw):
     a string, directory of extracted files, None on failure
   """
   if not os.path.exists(cros_fw):
-    logging.error('Necessary firmware extraction script %s missing.' % cros_fw)
+    logging.error('Necessary firmware extraction script %s missing.', cros_fw)
     return None
   cmd_result = RunCommand([cros_fw, '--sb_extract'], redirect_stdout=True)
   output_string = cmd_result.output
@@ -506,6 +542,8 @@ def CheckBundleInputs(image_names, options):
   - binary image names correctly passed by image fetch
   - binary image names point to existing files
 
+  Assuming a second recovery image implies a second release image.
+
   Args:
     image_names: a dict, values are absolute file paths for keys:
       'ssd': release image
@@ -544,14 +582,15 @@ def CheckBundleInputs(image_names, options):
       msg.append('Factory image %s does not exist.' % fac_name)
   else:
     msg.append('Bundling method needs factory image name.')
-  if options.release2:
+  if options.recovery2:
+    # we infer second release image should exist, since script options
+    # might not list second release image, implying recovery to ssd conversion
     ssd_name2 = image_names.get('ssd2', None)
     if ssd_name2:
       if not os.path.isfile(ssd_name2):
         msg.append('Second SSD image %s does not exist.' % ssd_name2)
     else:
       msg.append('Bundling method needs second ssd image name.')
-  if options.recovery2:
     rec_name2 = image_names.get('recovery2', None)
     if rec_name2:
       if not os.path.isfile(rec_name2):
@@ -570,10 +609,11 @@ def MakeFactoryBundle(image_names, options):
   Bundle is named with input version as well as the current date.
   Forces exit if any bundle components exist, use flags to override.
   Only extracts firmware from one release image.
+  Assuming a second recovery image implies a second release image.
 
   Args:
     image_names: a dict, values are absolute file paths for keys:
-      'ssd': release image
+      'ssd': release image or None
       'ssd2': second release image or None
       'recovery': recovery image
       'recovery2': second recovery image or None
@@ -653,6 +693,9 @@ def MakeFactoryBundle(image_names, options):
   if options.release2:
     shutil.copy(ssd_name2, bundle_dir)
   if options.recovery2:
+    if not options.release2:
+      # converted from recovery, still need to copy file
+      shutil.copy(ssd_name2, bundle_dir)
     shutil.copy(rec_name2, bundle_dir)
   if not fsi:
     # TODO(benwin) copy install shim into bundle_dir
@@ -664,6 +707,80 @@ def MakeFactoryBundle(image_names, options):
   logging.info('Completed creating factory bundle tar file in %s.', _TMPDIR)
   abstarname = os.path.join(tar_dir, tarname)
   return abstarname
+
+
+def ConvertRecoveryToSsd(image_name, board, recovery, force):
+  """Converts a recovery image into an SSD image.
+
+  Args:
+    image_name: absolute path name of recovery image to convert
+    board: board name of recovery image to convert
+    recovery: recovery image version/channel/signing_key
+    force: a boolean, True when any existing bundle files can be deleted
+  Returns:
+    a string, the absolute path name of the extracted SSD image
+  Throws:
+    BundlingError when resources not found or conversion fails.
+  """
+  # TODO(benwin) refactor to modularize
+  # fetch convert_recovery_to_full_ssd.sh
+  if os.path.exists(_GITDIR):
+    if force:
+      shutil.rmtree(_GITDIR)
+      os.mkdir(_GITDIR)
+    else:
+      raise BundlingError('Directory to git clone exists, use -f to overwrite')
+  RunCommand(['git', 'clone', _GITURL, _GITDIR])
+  # fetch zip containing chromiumos_base_image
+  try:
+    index_page, rec_pat = GetRecoveryName(board, recovery)
+  except NameResolutionError:
+    index_page, rec_pat = GetRecoveryName(board,
+                                          recovery,
+                                          alt_naming=True)
+  rec_url = DetermineUrl(index_page, rec_pat)
+  if not rec_url:
+    raise BundlingError('Could not find match for pattern %s at %s.' %
+                        (rec_pat, rec_url))
+  rec_no = recovery.split('/')[0]
+  zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
+  zip_url = DetermineUrl(index_page, zip_pat)
+  if not Download(zip_url):
+    raise BundlingError('Failed to download %s.' % zip_url)
+  zip_name = os.path.join(_TMPDIR, os.path.basename(zip_url))
+  ssd_name = image_name.replace('recovery', 'ssd')
+  if os.path.exists(ssd_name):
+    if not force:
+      raise BundlingError('File named %s already exists, use -f to overwrite' %
+                          ssd_name)
+  # put cgpt in the path
+  au_gen_url = os.path.join(index_page, _AU_GEN)
+  if not Download(au_gen_url):
+    raise BundlingError('Necessary resource %s could not be fetched.' %
+                        au_gen_url)
+  au_gen_name = os.path.join(_TMPDIR, _AU_GEN)
+  cgpt_name = os.path.join(_TMPDIR, 'cgpt')
+  if not ZipExtract(au_gen_name, 'cgpt', path=_TMPDIR):
+    raise BundlingError('Could not extract necesary resource %s from %s.' %
+                        (cgpt_name, au_gen_name))
+  cgpt_dest = os.path.join(_SUDO_DIR, 'cgpt')
+  if os.path.exists(cgpt_dest):
+    if force:
+      RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+    else:
+      raise BundlingError('Necessary utility cgpt already exists at %s, use '
+                          '-f to overwrite with newest version.' %
+                          cgpt_dest)
+  else:
+    RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+  # execute script
+  script_name = os.path.join(_GITDIR,
+                             'scripts',
+                             'image_signing',
+                             'convert_recovery_to_full_ssd.sh')
+  RunCommand([script_name, image_name, zip_name, ssd_name])
+  # TODO(benwin) consider cleaning up resources based on command line flag
+  return ssd_name
 
 
 def GetNameComponents(board, version_string, alt_naming):
@@ -821,6 +938,7 @@ def FetchImages(options, alt_naming=False):
         recovery: recovery image version, channel, and signing key
         recovery2: optional second recovery version, channel, and signing key
         fsi: a boolean, True when processing for Final Shipping Image
+        force: a boolean, True when any existing bundle files can be deleted
     alt_naming: try alternative build naming
         False - default naming scheme
         True - append '-rc' to board for index html page and links
@@ -844,14 +962,16 @@ def FetchImages(options, alt_naming=False):
   recovery2 = options.recovery2
   fsi = options.fsi
   # TODO(benwin) refactor this function, it is too long
-  rel_url, rel_pat = GetReleaseName(board, release, alt_naming)
+  if release:
+    rel_url, rel_pat = GetReleaseName(board, release, alt_naming)
   fac_url, fac_pat = GetFactoryName(board, factory, alt_naming)
   rec_url, rec_pat = GetRecoveryName(board, recovery, alt_naming)
   # Release
-  rel_name = DetermineThenDownloadCheckMd5(rel_url,
-                                           rel_pat,
-                                           _TMPDIR,
-                                           'Release image')
+  if release:
+    rel_name = DetermineThenDownloadCheckMd5(rel_url,
+                                             rel_pat,
+                                             _TMPDIR,
+                                             'Release image')
   # Optional Extra Release
   if release2:
     rel_url2, rel_pat2 = GetReleaseName(board2, release2)
@@ -866,6 +986,15 @@ def FetchImages(options, alt_naming=False):
                                            rec_pat,
                                            _TMPDIR,
                                            'Recovery image')
+  # if needed, run recovery to ssd conversion now that we have recovery image
+  if not release:
+    rel_name = ConvertRecoveryToSsd(rec_name,
+                                    options.board,
+                                    options.recovery,
+                                    options.force)
+    if not MakeMd5(rel_name):
+      raise BundlingError('Failed to create md5 checksum for file %s.' %
+                          rel_name)
   # Optional Extra Recovery
   if recovery2:
     rec_url2, rec_pat2 = GetRecoveryName(board2, recovery2)
@@ -875,6 +1004,12 @@ def FetchImages(options, alt_naming=False):
                                               'Second recovery image')
   else:
     rec_name2 = None
+  # if provided a second recovery image but no matching ssd, run conversion
+  if recovery2 and not release2:
+    rel_name2 = ConvertRecoveryToSsd(rec_name2,
+                                     options.board2,
+                                     options.recovery2,
+                                     options.force)
   # Factory
   if not fsi:
     fac_url = DetermineUrl(fac_url, fac_pat)
@@ -909,13 +1044,28 @@ def FetchImages(options, alt_naming=False):
   return image_names
 
 
+def CheckParseOptions(options, parser):
+  """Checks parse options input to the factory bundle script.
+
+  Args:
+    options: an object with the input options to the script
+    parser: the OptionParser used to parse the input options
+  Raises:
+    BundlingError when parse options are bad
+  """
+  if not options.factory:
+    parser.print_help()
+    raise BundlingError('\nMust specify factory zip version/channel.')
+
+
 def HandleParseOptions():
   """Configures and retrieves options from option parser.
 
   Returns:
     an object, the options given to the script
+    the OptionParser used to parse input options
   """
-  parser = OptionParser()
+  parser = OptionParser(usage=__doc__)
   parser.add_option('-b', '--board', action='store', type='string',
                     dest='board', help='target board')
   parser.add_option('-r', '--release', action='store', type='string',
@@ -942,7 +1092,7 @@ def HandleParseOptions():
                     default=False,
                     help='remove all stored bundles files in tmp storage')
   parser.add_option('--bundle_dir', action='store', dest='bundle_dir',
-                    help='destination directory for factory bundle files')
+                    help='absolute path to directory for factory bundle files')
   parser.add_option('--tar_dir', action='store', dest='tar_dir',
                     help='destination directory for factory bundle tar')
   parser.add_option('--board2', action='store', type='string', dest='board2',
@@ -951,20 +1101,23 @@ def HandleParseOptions():
                     help='optional second release image for factory bundle')
   parser.add_option('--recovery2', action='store', dest='recovery2',
                     help='optional second recovery image for factory bundle')
-  parser.add_option('loglevel', action='store', dest='loglevel',
+  parser.add_option('--log_level', action='store', dest='loglevel',
                     help='console logging level: DEBUG, INFO, WARNING, ERROR')
+  parser.add_option('--no_upload', action='store_false', dest='do_upload',
+                    default=True,
+                    help='disables upload to Google Storage for Developers')
   (options, args) = parser.parse_args()
-  LOG_LEVEL = dict(DEBUG=logging.DEBUG,
+  log_level = dict(DEBUG=logging.DEBUG,
                    INFO=logging.INFO,
                    WARNING=logging.WARNING,
                    ERROR=logging.ERROR)
   if options.loglevel:
-    if options.loglevel not in LOG_LEVEL:
+    if options.loglevel not in log_level:
       raise BundlingError('Invalid logging level, please see --help and use '
                           'all caps')
     else:
-      options.loglevel = LOG_LEVEL(options.loglevel)
-  return options
+      options.loglevel = log_level[options.loglevel]
+  return (options, parser)
 
 
 def main():
@@ -973,7 +1126,7 @@ def main():
   Raises:
     BundlingError when image fetch or bundle processing fail.
   """
-  options = HandleParseOptions()
+  (options, parser) = HandleParseOptions()
   if not os.path.exists(_TMPDIR):
     os.makedirs(_TMPDIR)
   logging.basicConfig(level=logging.DEBUG,
@@ -981,6 +1134,7 @@ def main():
   console = logging.StreamHandler()
   console.setLevel(options.loglevel if options.loglevel else logging.DEBUG)
   logging.getLogger('').addHandler(console)
+  CheckParseOptions(options, parser)
   # TODO(benwin) run basic sanitization checks on options
   if IsInsideChroot():
     logging.error('Please run this script outside the chroot environment.')
@@ -999,7 +1153,8 @@ def main():
   if not options.mount_point:
     options.mount_point = _MOUNT_POINT
   tarname = MakeFactoryBundle(image_names, options)
-  UploadToGsd(tarname)
+  if options.do_upload:
+    UploadToGsd(tarname)
 
 
 if __name__ == "__main__":
