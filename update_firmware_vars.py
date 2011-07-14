@@ -6,6 +6,7 @@
 
 """Update environment variables in a legacy_image.bin."""
 
+import copy
 import optparse
 import os
 import shutil
@@ -39,6 +40,99 @@ class ArgumentError(Exception):
   filesystem.
   """
   pass
+
+
+class _OptionWithMemsize(optparse.Option):
+  """Option subclass that has an additional 'memsize' option.
+
+  The memsize option allows you to add a k/m/g suffix to your integers to
+  specify KiB, MiB, or GiB.
+
+
+  >>> parser = optparse.OptionParser(option_class=_OptionWithMemsize)
+  >>> _ = parser.add_option('--test', type='memsize')
+
+  # Simple: just a number of bytes...
+  >>> opts, args = parser.parse_args(['--test', '999'])
+  >>> print opts
+  {'test': 999}
+
+  # Can do hex number of bytes...
+  >>> opts, args = parser.parse_args(['--test', '0x1000'])
+  >>> print opts
+  {'test': 4096}
+
+  # Kilobyte suffix...
+  >>> opts, args = parser.parse_args(['--test', '1k'])
+  >>> print opts
+  {'test': 1024}
+
+  # Can handle hex and upper-case suffix too..
+  >>> opts, args = parser.parse_args(['--test', '0xfK'])
+  >>> print opts
+  {'test': 15360}
+
+  # Check other suffixes
+  >>> opts, args = parser.parse_args(['--test', '1m'])
+  >>> print opts
+  {'test': 1048576}
+  >>> opts, args = parser.parse_args(['--test', '1g'])
+  >>> print opts
+  {'test': 1073741824}
+
+  # Negative test cases; need to quiet stderr first...
+  >>> import StringIO
+  >>> _oldstderr = sys.stderr
+  >>> sys.stderr = StringIO.StringIO()
+  >>> opts, args = parser.parse_args(['--test', 'hello'])
+  Traceback (most recent call last):
+      ...
+  SystemExit: 2
+  >>> opts, args = parser.parse_args(['--test', ''])
+  Traceback (most recent call last):
+      ...
+  SystemExit: 2
+  >>> sys.stderr = _oldstderr
+  """
+
+  @staticmethod
+  def _CheckMemsize(option, opt, value):
+    """Check that a 'memsize' option to optparse is good.
+
+    Args:
+      option: See optparse manual.
+      opt: Option name we're parsing; See optparse manual.
+      value: Value we're parsing; See optparse manual.
+    Returns:
+      value: The parsed value.
+    Raises:
+      OptionValueError: Upon error
+    """
+    # Note: purposely no 'b' suffix, since that makes 0x12b ambiguous.
+    multiplier_table = [
+      ('g', 1024 * 1024 * 1024),
+      ('m', 1024 * 1024),
+      ('k', 1024),
+      ('', 1),
+    ]
+    for (suffix, multiplier) in multiplier_table:
+      if value.lower().endswith(suffix):
+        new_value = value
+        if suffix:
+          new_value = new_value[:-len(suffix)]
+        try:
+          # Convert w/ base 0 (handles hex, binary, octal, etc)
+          return int(new_value, 0) * multiplier
+        except ValueError:
+          # Pass and try other suffixes; not useful now, but may be useful
+          # later if we ever allow B vs. GB vs. GiB.
+          pass
+    raise optparse.OptionValueError("option %s: invalid memsize value: %r" %
+                                    (opt, value))
+
+  TYPES = optparse.Option.TYPES + ('memsize',)
+  TYPE_CHECKER = copy.copy(optparse.Option.TYPE_CHECKER)
+_OptionWithMemsize.TYPE_CHECKER['memsize'] = _OptionWithMemsize._CheckMemsize
 
 
 def _GetSpecialVars(opts):
@@ -302,12 +396,14 @@ def _ParseOptions():
   Returns:
     opts: Options from optparse.OptionParser.
   """
-  parser = optparse.OptionParser(description=__doc__)
+  parser = optparse.OptionParser(description=__doc__,
+                                 option_class=_OptionWithMemsize)
 
-  parser.add_option('--env-size', dest='env_size', default=0x1000, type='int',
+  parser.add_option('--env-size', dest='env_size', default=0x1000,
+                    type='memsize',
                     help='If specified, overrides the default env_size that '
                     'u-boot expects')
-  parser.add_option('--fw-size', dest='fw_size', default=None, type='int',
+  parser.add_option('--fw-size', dest='fw_size', default=None, type='memsize',
                     help='If specified, firmware will be padded to be this '
                     'many bytes')
   parser.add_option('--input', '-i', dest='input', default=None,
