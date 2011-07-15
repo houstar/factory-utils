@@ -446,9 +446,9 @@ def main():
     env_str = _BuildEnvironment(env_vars, opts.env_size)
     outfile = _MakeOutput(opts.input, opts.output, opts.fw_size)
     _PutEnvInFile(outfile, env_str, opts.force)
-    outfile.close()
 
-    print 'Output: %s (0x%08x bytes)' % (outfile.name, opts.fw_size)
+    print 'Output: %s (0x%08x bytes)' % (outfile.name,
+                                         os.path.getsize(outfile.name))
     print '\n  '.join(['Stored env:'] + env_vars)
   except ArgumentError, e:
     print >>sys.stderr, "%s: error: %s" % (prog_name, str(e))
