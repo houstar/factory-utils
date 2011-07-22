@@ -24,7 +24,8 @@ OPTION_ENVIRONMENT_VARS = {
 
 # Some kernel arguments are also "first class".  They are listed here.
 OPTION_KERNEL_ARGS = {
-  'omahaip': 'omahaserverip=%s',
+  'omahaserver': 'omahaserver=%s',
+  'board': 'cros_board=%s',
 }
 
 # This is the environment we'll write, which tells to merge this environment
@@ -171,14 +172,19 @@ def _GetSpecialKernelArgs(opts):
 
   >>> class FakeOpts(object): pass
   >>> opts = FakeOpts()
-  >>> opts.omahaip = None
+  >>> opts.omahaserver = None
+  >>> opts.board = None
 
   >>> _GetSpecialKernelArgs(opts)
   []
 
-  >>> opts.omahaip = "3.4.5.6"
+  >>> opts.omahaserver = "3.4.5.6"
   >>> sorted(_GetSpecialKernelArgs(opts))
-  ['omahaserverip=3.4.5.6']
+  ['omahaserver=3.4.5.6']
+
+  >>> opts.board = "tegra2_kaen-gobi"
+  >>> sorted(_GetSpecialKernelArgs(opts))
+  ['cros_board=tegra2_kaen-gobi', 'omahaserver=3.4.5.6']
 
   Args:
     opts: The options from the option parser.
@@ -451,7 +457,10 @@ def _ParseOptions():
   # OPTION_ENVIRONMENT_VARS and OPTION_KERNEL_ARGS
   parser.add_option('--tftpserverip', default=None,
                     help='Set the TFTP server IP address')
-  parser.add_option('--omahaip', default=None,
+
+  parser.add_option('--board', default=None,
+                    help='Set the cros_board to be passed into the kernel')
+  parser.add_option('--omahaserver', default=None,
                     help='Set the Omaha server IP address')
 
   parser.add_option('--var', default=[], dest='vars', metavar='var',
