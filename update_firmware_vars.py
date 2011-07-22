@@ -20,7 +20,11 @@ import zlib
 # change the command-line option into an environment variable.
 OPTION_ENVIRONMENT_VARS = {
   'tftpserverip': 'tftpserverip=%s',
-  'omahaip': 'extra_bootargs=omahaserverip=%s',
+}
+
+# Some kernel arguments are also "first class".  They are listed here.
+OPTION_KERNEL_ARGS = {
+  'omahaip': 'omahaserverip=%s',
 }
 
 # This is the environment we'll write, which tells to merge this environment
@@ -135,24 +139,19 @@ class _OptionWithMemsize(optparse.Option):
 _OptionWithMemsize.TYPE_CHECKER['memsize'] = _OptionWithMemsize._CheckMemsize
 
 
-def _GetSpecialVars(opts):
-  """Grab settings that the user can set directly via command-line options.
+def _GetSpecialEnvVars(opts):
+  """Grab env vars that the user can set directly via command-line options.
 
   >>> class FakeOpts(object): pass
   >>> opts = FakeOpts()
   >>> opts.tftpserverip = None
-  >>> opts.omahaip = None
 
-  >>> _GetSpecialVars(opts)
+  >>> _GetSpecialEnvVars(opts)
   []
 
   >>> opts.tftpserverip = "1.2.3.4"
-  >>> sorted(_GetSpecialVars(opts))
+  >>> sorted(_GetSpecialEnvVars(opts))
   ['tftpserverip=1.2.3.4']
-
-  >>> opts.omahaip = "3.4.5.6"
-  >>> sorted(_GetSpecialVars(opts))
-  ['extra_bootargs=omahaserverip=3.4.5.6', 'tftpserverip=1.2.3.4']
 
   Args:
     opts: The options from the option parser.
@@ -167,15 +166,43 @@ def _GetSpecialVars(opts):
   return vars
 
 
-def _BuildEnvironment(env_vars, env_size):
+def _GetSpecialKernelArgs(opts):
+  """Grab kernel args that the user can set directly via command-line options.
+
+  >>> class FakeOpts(object): pass
+  >>> opts = FakeOpts()
+  >>> opts.omahaip = None
+
+  >>> _GetSpecialKernelArgs(opts)
+  []
+
+  >>> opts.omahaip = "3.4.5.6"
+  >>> sorted(_GetSpecialKernelArgs(opts))
+  ['omahaserverip=3.4.5.6']
+
+  Args:
+    opts: The options from the option parser.
+
+  Returns:
+    vars: A list of strings that will eventually be joined with space to create
+      the kernel command line.
+  """
+  vars = []
+  for opt_name, value in OPTION_KERNEL_ARGS.iteritems():
+    if getattr(opts, opt_name):
+      vars.append(OPTION_KERNEL_ARGS[opt_name] % getattr(opts, opt_name))
+  return vars
+
+
+def _BuildEnvironment(env_vars, kernel_args, env_size):
   """Build up the u-boot environment string.
 
-  >>> s = _BuildEnvironment(['a=b', 'c=d'], 0x100)
+  >>> s = _BuildEnvironment(['a=b', 'c=d'], ['noinitrd', 'x=y'], 0x100)
   >>> len(s)
   256
 
   >>> _ParseEnvStr(s)
-  ['merge_with_default=1', 'a=b', 'c=d']
+  ['merge_with_default=1', 'a=b', 'c=d', 'extra_bootargs=noinitrd x=y']
 
   Args:
     env_vars: List of env_vars to put in the environment (after the default).
@@ -185,6 +212,11 @@ def _BuildEnvironment(env_vars, env_size):
     env_str: The environment string for u-boot, including checksum.
   """
   assert DEFAULT_ENV.endswith('\0')
+
+  # Add the command-line args in through extra_bootargs
+  if kernel_args:
+    env_vars += ['extra_bootargs=%s' % (' '.join(kernel_args))]
+
   env_str = DEFAULT_ENV + '\0'.join(env_vars)
 
   # Pad to full size...
@@ -338,7 +370,7 @@ def _PutEnvInFile(outfile, env_str, clobber_ok):
   >>> import StringIO
   >>> FILE_SIZE=0x10000
   >>> f = StringIO.StringIO(chr(0) * FILE_SIZE)
-  >>> env_str = _BuildEnvironment([], 0x100)
+  >>> env_str = _BuildEnvironment([], [], 0x100)
   >>> _PutEnvInFile(f, env_str, False)
   >>> s = f.getvalue()
 
@@ -416,7 +448,7 @@ def _ParseOptions():
                     help='Bypass ignorable errors')
 
   # Special-case options to make things simpler for factory.  Must match
-  # OPTION_ENVIRONMENT_VARS
+  # OPTION_ENVIRONMENT_VARS and OPTION_KERNEL_ARGS
   parser.add_option('--tftpserverip', default=None,
                     help='Set the TFTP server IP address')
   parser.add_option('--omahaip', default=None,
@@ -424,7 +456,10 @@ def _ParseOptions():
 
   parser.add_option('--var', default=[], dest='vars', metavar='var',
                     action='append',
-                    help='Set any arbitrary arg using format arg=value')
+                    help='Set any arbitrary u-boot var using format arg=value')
+  parser.add_option('--arg', default=[], dest='args', metavar='arg',
+                    action='append',
+                    help='Set any arbitrary kernel command line arg')
 
   opts, args = parser.parse_args()
   if args:
@@ -442,8 +477,9 @@ def main():
     print 'Input:  %s (0x%08x bytes)' % (opts.input,
                                          os.path.getsize(opts.input))
 
-    env_vars = opts.vars + _GetSpecialVars(opts)
-    env_str = _BuildEnvironment(env_vars, opts.env_size)
+    env_vars = opts.vars + _GetSpecialEnvVars(opts)
+    kernel_args = opts.args + _GetSpecialKernelArgs(opts)
+    env_str = _BuildEnvironment(env_vars, kernel_args, opts.env_size)
     outfile = _MakeOutput(opts.input, opts.output, opts.fw_size)
     _PutEnvInFile(outfile, env_str, opts.force)
 
