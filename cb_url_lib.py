@@ -73,7 +73,6 @@ def DetermineUrl(url, pattern):
   Returns:
     a string, an exact URL, or None if URL not present or link not found
   """
-  pat = re.compile(pattern)
   try:
     usock = urllib.urlopen(url)
   except IOError:
@@ -84,14 +83,31 @@ def DetermineUrl(url, pattern):
   parser.feed(usock.read())
   usock.close()
   parser.close()
-  if len(parser.urls):
-    matches = [u for u in parser.urls if pat.search(u)]
-    if len(matches):
+  link = MatchUrl(parser.urls, pattern)
+  return os.path.join(url, link)
+
+
+def MatchUrl(url_list, pattern):
+  """Return a URL from a list given a pattern to match.
+
+  If more than one URL is found to match, the first will be returned.
+  Any other matches will be logged as a warning.
+
+  Args:
+    url_list: a list of URLs to match against
+    pattern: a string, a regex pattern to match
+  Returns:
+    a string, a matching URL, or None if no matching URL found
+  """
+  pat = re.compile(pattern)
+  if url_list:
+    matches = [u for u in url_list if pat.search(u)]
+    if matches:
       if len(matches) > 1:
         logging.warning('More than one resource matching %s found.', pattern)
         for match in matches[1:]:
-          logging.warning('Additional match %s found.', match)
-      return '/'.join([url, matches[0]])
+          logging.warning('Additional match %s found and ignored.', match)
+      return matches[0]
   return None
 
 
@@ -110,20 +126,14 @@ def Download(url):
     a boolean, True only when file is fully downloaded
   """
   try:
-    web_file = urllib.urlopen(url)
-    local_file = open(os.path.join(cb_constants.TMPDIR, url.split('/')[-1]),
-                      'w')
-    local_file.write(web_file.read())
-    return True
+    with urllib.urlopen(url) as web_file:
+      local_file_name = os.path.join(cb_constants.TMPDIR, url.split('/')[-1])
+      with open(local_file_name, 'w') as local_file:
+        local_file.write(web_file.read())
+        return True
   except IOError:
-    logging.warning('Could not open %s or writing %s failed.',
-                    (url, local_file))
+    logging.warning('Could not open %s or writing local file failed.', url)
     return False
-  finally:
-    if web_file:
-      web_file.close()
-    if local_file:
-      local_file.close()
 
 
 def DetermineThenDownloadCheckMd5(url, pattern, path, desc):
@@ -145,6 +155,20 @@ def DetermineThenDownloadCheckMd5(url, pattern, path, desc):
   return DownloadCheckMd5(url, path, desc)
 
 
+def CheckResourceExistsWithMd5(filename, md5filename):
+  """Check if a resource exists in the local file system with a good MD5.
+
+  Args:
+    filename: name of file to check for
+    md5filename: name of file containing golden MD5 checksum
+  Returns:
+    a boolean, True when the file exists with good MD5
+  """
+  return (os.path.exists(filename) and
+          os.path.exists(md5filename) and
+          cb_util_lib.CheckMd5(filename, md5filename))
+
+
 def DownloadCheckMd5(url, path, desc):
   """Download a resource and check the MD5 checksum.
 
@@ -161,9 +185,7 @@ def DownloadCheckMd5(url, path, desc):
     BundlingError when resources cannot be fetched or download integrity fails.
   """
   name = os.path.join(path, url.split('/')[-1])
-  if (os.path.exists(name) and
-      os.path.exists(name + '.md5') and
-      cb_util_lib.CheckMd5(name)):
+  if CheckResourceExistsWithMd5(name, name + '.md5'):
     logging.info('Resource %s already exists with good MD5, skipping fetch.',
                  name)
   else:
@@ -172,7 +194,7 @@ def DownloadCheckMd5(url, path, desc):
       raise BundlingError(desc + ' could not be fetched.')
     if not Download(url + '.md5'):
       raise BundlingError(desc + ' MD5 could not be fetched.')
-    if not cb_util_lib.CheckMd5(name):
+    if not cb_util_lib.CheckMd5(name, name + '.md5'):
       raise BundlingError(desc + ' MD5 checksum does not match.')
     logging.debug('MD5 checksum match succeeded for %s', name)
   return name

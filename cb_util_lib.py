@@ -12,20 +12,19 @@ import os
 import zipfile
 
 
-def CheckMd5(filename):
+def CheckMd5(filename, md5filename):
   """Checks the MD5 checksum of file against provided baseline .md5
-
-  Assuming baseline .md5 is stored in same directory as filename.md5
 
   Args:
     filename: name of file to check MD5 checksum
+    md5filename: name of file with reference MD5 checksum
   Returns:
     a boolean, True when the MD5 checksums agree
   """
   try:
     hasher = hashlib.md5()
     with open(filename) as check_file:
-      with open(filename + '.md5') as golden_file:
+      with open(md5filename) as golden_file:
         for chunk in iter(lambda: check_file.read(128*hasher.block_size), ''):
           hasher.update(chunk)
         md5_contents = golden_file.read()

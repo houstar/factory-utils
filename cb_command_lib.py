@@ -261,7 +261,9 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     shutil.copy(cros_fw, firmware_dest)
   finally:
     RunCommand(['./mount_gpt_image.sh', '--unmount'])
-  if not cb_util_lib.CheckMd5(os.path.join(cb_constants.TMPDIR, image_name)):
+  filename = os.path.join(cb_constants.TMPDIR, image_name)
+  md5filename = filename + '.md5'
+  if not cb_util_lib.CheckMd5(filename, md5filename):
     logging.error('SSD image MD5 checksum did not match, image was corrupted!')
     return False
   return True
