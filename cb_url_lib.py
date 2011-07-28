@@ -5,15 +5,18 @@
 
 """This module contains methods for interacting with online resources."""
 
-import cb_constants
-import cb_util_lib
+import contextlib
 import formatter
 import logging
 import os
 import re
 import urllib
 
+import cb_constants
+import cb_util_lib
+
 from htmllib import HTMLParser
+
 from cb_constants import BundlingError
 
 
@@ -126,7 +129,7 @@ def Download(url):
     a boolean, True only when file is fully downloaded
   """
   try:
-    with urllib.urlopen(url) as web_file:
+    with contextlib.closing(urllib.urlopen(url)) as web_file:
       local_file_name = os.path.join(cb_constants.TMPDIR, url.split('/')[-1])
       with open(local_file_name, 'w') as local_file:
         local_file.write(web_file.read())

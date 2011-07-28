@@ -57,6 +57,9 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False, cwd=None):
   if redirect_stderr:
     stderr = subprocess.PIPE
 
+  # log command run
+  logging.info('Running command: ' + ' '.join(cmd))
+
   try:
     proc = subprocess.Popen(cmd, cwd=cwd, stdout=stdout, stderr=stderr)
   except OSError as (errno, strerror):
@@ -289,7 +292,13 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
       shutil.rmtree(cb_constants.GITDIR)
       os.mkdir(cb_constants.GITDIR)
     else:
-      raise BundlingError('Directory to git clone exists, use -f to overwrite')
+      msg = ('Old recovery conversion script git repo exists, please '
+             'confirm overwrite')
+      if AskUserConfirmation(msg):
+        shutil.rmtree(cb_constants.GITDIR)
+        os.mkdir(cb_constants.GITDIR)
+      else:
+        raise BundlingError('Vboot git repo exists, use -f to update')
   RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
   # fetch zip containing chromiumos_base_image
   try:
@@ -312,8 +321,10 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   ssd_name = image_name.replace('recovery', 'ssd')
   if os.path.exists(ssd_name):
     if not force:
-      raise BundlingError('File named %s already exists, use -f to overwrite' %
-                          ssd_name)
+      msg = 'SSD file %s already exists, please confirm overwrite' % ssd_name
+      if not AskUserConfirmation(msg):
+        raise BundlingError('File %s already exists, use -f to overwrite' %
+                            ssd_name)
   # put cgpt in the path
   au_gen_url = os.path.join(index_page, cb_constants.AU_GEN)
   if not cb_url_lib.Download(au_gen_url):
@@ -329,9 +340,13 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
     if force:
       RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
     else:
-      raise BundlingError('Necessary utility cgpt already exists at %s, use '
-                          '-f to overwrite with newest version.' %
-                          cgpt_dest)
+      msg = 'cgpt exists at %s, please confirm update' % cgpt_dest
+      if AskUserConfirmation(msg):
+        RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+      else:
+        raise BundlingError('Necessary utility cgpt already exists at %s, use '
+                            '-f to overwrite with newest version.' %
+                            cgpt_dest)
   else:
     RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
   # execute script
@@ -342,3 +357,16 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   RunCommand([script_name, image_name, zip_name, ssd_name])
   # TODO(benwin) consider cleaning up resources based on command line flag
   return ssd_name
+
+
+def AskUserConfirmation(msg):
+  """Interactively obtain consent from user.
+
+  Args:
+    msg: a string describing the permission sought
+  Returns:
+    a boolean, True when the user gives assent
+  """
+  logging.info(msg + ' (y/n): ')
+  ans = str(raw_input())
+  return ans.lower() == 'y'

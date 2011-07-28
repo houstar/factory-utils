@@ -15,6 +15,7 @@ import logging
 import os
 import shutil
 
+from cb_command_lib import AskUserConfirmation
 from cb_constants import BundlingError
 from cb_url_lib import DetermineThenDownloadCheckMd5
 
@@ -147,8 +148,13 @@ def MakeFactoryBundle(image_names, options):
     if del_ok:
       shutil.rmtree(bundle_dir)
     else:
-      raise BundlingError('Directory %s already exists. Use -f to overwrite.' %
-                          bundle_dir)
+      msg = 'Bundle directory %s already exists. Ok to overwrite?' % bundle_dir
+      ans = AskUserConfirmation(msg)
+      if ans:
+        shutil.rmtree(bundle_dir)
+      else:
+        raise BundlingError('Directory %s exists. Use -f to overwrite.' %
+                            bundle_dir)
   os.mkdir(bundle_dir)
   if tar_dir:
     if not os.path.isdir(tar_dir):
@@ -165,8 +171,14 @@ def MakeFactoryBundle(image_names, options):
       if del_ok:
         shutil.rmtree(firmware_dest)
       else:
+        msg = ('Bundle directory %s already exists. Ok to overwrite?' %
+               firmware_dest)
+      ans = AskUserConfirmation(msg)
+      if ans:
+        shutil.rmtree(firmware_dest)
+      else:
         raise BundlingError('Directory %s exists. Use -f to overwrite.' %
-                firmware_dest)
+                            firmware_dest)
     os.mkdir(firmware_dest)
     if cb_command_lib.ExtractFirmware(ssd_name, firmware_dest, mount_point):
       logging.info('Successfully extracted firmware to %s', firmware_dest)
@@ -186,6 +198,7 @@ def MakeFactoryBundle(image_names, options):
     # TODO(benwin) copy install shim into bundle_dir
     shutil.copy(fac_name, bundle_dir)
   logging.info('Completed copying factory bundle files to %s', bundle_dir)
+  logging.info('Tarring bundle files, this operation is resource-intensive.')
   tarname = cb_util_lib.MakeTar(bundle_dir, tar_dir)
   if not tarname:
     raise BundlingError('Failed to create tar file of bundle directory.')
@@ -324,6 +337,7 @@ def CheckParseOptions(options, parser):
   Raises:
     BundlingError when parse options are bad
   """
-  if not options.factory:
+  # TODO(benwin) check that clean does not occur with any other options
+  if not options.clean and not options.factory:
     parser.print_help()
     raise BundlingError('\nMust specify factory zip version/channel.')
