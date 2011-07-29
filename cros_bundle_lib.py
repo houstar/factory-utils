@@ -276,7 +276,7 @@ def FetchImages(options, alt_naming=False):
                                                    options.board,
                                                    options.recovery,
                                                    options.force)
-    if not cb_util_lib.MakeMd5(rel_name):
+    if not cb_util_lib.MakeMd5(rel_name, rel_name + '.md5'):
       raise BundlingError('Failed to create md5 checksum for file %s.' %
                           rel_name)
   # Optional Extra Recovery

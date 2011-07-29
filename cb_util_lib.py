@@ -28,31 +28,31 @@ def CheckMd5(filename, md5filename):
         for chunk in iter(lambda: check_file.read(128*hasher.block_size), ''):
           hasher.update(chunk)
         md5_contents = golden_file.read()
-        if len(md5_contents):
+        if md5_contents:
           golden_digest_and_more = md5_contents.split(' ')
-          if len(golden_digest_and_more):
+          if golden_digest_and_more:
             return golden_digest_and_more[0] == hasher.hexdigest()
         logging.warning('MD5 checksum match failed for %s', filename)
         return False
   except IOError:
-    logging.warning('MD5 checksum match failed for %s', filename)
+    logging.warning('MD5 hasher read failed for %s', filename)
     return False
 
 
-def MakeMd5(filename):
+def MakeMd5(filename, md5filename):
   """Generates an MD5 checksum for a file.
 
-  Create file in same directory as provided file, appending '.md5' to name.
-  Assuming directory containing file is writable.
+  Assuming directory of destination file is writable.
 
   Args:
     filename: absolute path name of file to hash
+    md5filename: absolute path name of MD5 file to create
   Returns:
     a boolean, True when md5checksum file is successfully created
   """
   try:
     with open(filename, 'r') as read_file:
-      with open(filename + '.md5', 'w') as hash_file:
+      with open(md5filename, 'w') as hash_file:
         hasher = hashlib.md5()
         for chunk in iter(lambda: read_file.read(128*hasher.block_size), ''):
           hasher.update(chunk)
@@ -66,6 +66,8 @@ def MakeMd5(filename):
 
 def ZipExtract(zipname, filename, path=os.getcwd()):
   """Extract a file from a zip archive.
+
+  Assuming path, if provided, exists and is writable.
 
   Args:
     zipname: name of the zip archive
