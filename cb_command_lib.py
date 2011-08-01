@@ -107,7 +107,7 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
     logging.error('\nPlease run this script from the src/scripts directory.\n')
     res = False
   cmd_result = RunCommand(['which', 'uudecode'],
-                                         redirect_stdout=True)
+                          redirect_stdout=True)
   output_string = cmd_result.output
   if not output_string:
     logging.error('\nMissing uudecode. Please run sudo apt-get install '
