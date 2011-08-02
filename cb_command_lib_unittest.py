@@ -38,6 +38,24 @@ def _CleanUp(obj):
       shutil.rmtree(dir_to_clean)
 
 
+def _AssertFirmwareError(obj):
+  """Common logic to assert an error will be raised while listing firmware.
+
+  Args:
+    obj: an instance of mox.MoxTestBase
+  """
+  obj.mox.StubOutWithMock(os.path, 'exists')
+  obj.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+  os.path.exists(IsA(str)).AndReturn(True)
+  cb_command_lib.RunCommand(IsA(list),
+                            redirect_stdout=True).AndReturn(obj.mock_cres)
+  obj.mox.ReplayAll()
+  obj.assertRaises(BundlingError,
+                   cb_command_lib.ListFirmware,
+                   obj.image_name,
+                   obj.cros_fw)
+
+
 # RunCommand tested in <chromeos_root>/chromite/lib/cros_build_lib_unittest.py
 
 
@@ -159,6 +177,101 @@ class TestCheckEnvironment(mox.MoxTestBase):
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
                                                      self.firmware_dest,
                                                      self.mount_point))
+
+
+class TestUploadToGsd(mox.MoxTestBase):
+  """Unit tests related to UploadToGsd."""
+
+  def testFileExists(self):
+    """Verify call sequence when file to upload exists."""
+    filename = 'fakefilename'
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    self.mox.ReplayAll()
+    cb_command_lib.UploadToGsd(filename)
+
+  def testNoFileGiven(self):
+    """Verify error raised when no file given to upload."""
+    filename = ''
+    self.assertRaises(BundlingError, cb_command_lib.UploadToGsd, filename)
+
+  def testFileDoesNotExist(self):
+    """Verify error raised when file given to upload does not exist."""
+    filename = 'fakefilename'
+    self.mox.StubOutWithMock(os.path, 'exists')
+    os.path.exists(IsA(str)).AndReturn(False)
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError, cb_command_lib.UploadToGsd, filename)
+
+
+class TestListFirmware(mox.MoxTestBase):
+  """Unit tests related to ListFirmware."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.image_name = 'ssd_name_here.bin'
+    self.cros_fw = 'chromeos-firmwareupdate'
+    self.mock_cres = cb_command_lib.CommandResult()
+
+  def testListFirmwareSuccess(self):
+    """Verify return value when all goes well."""
+    ec_new_name = 'Alex1234'
+    bios_new_name = 'AlexABCD'
+    fake_output = '\n'.join(['EC image: ' + ec_new_name,
+                             'BIOS image: ' + bios_new_name,
+                             './' +  cb_constants.EC_NAME,
+                             './' + cb_constants.BIOS_NAME])
+    self.mock_cres.output = fake_output
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list),
+                              redirect_stdout=True).AndReturn(self.mock_cres)
+    self.mox.ReplayAll()
+    expected = (ec_new_name, bios_new_name)
+    actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
+    self.assertEqual(expected, actual)
+
+  def testCrosFwDoesNotExist(self):
+    """Verify error when provided script name is bad."""
+    self.cros_fw = ''
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ListFirmware,
+                      self.image_name,
+                      self.cros_fw)
+
+  def testCrosFwFails(self):
+    """Verify error when provided script fails to output."""
+    self.mock_cres.output = ''
+    _AssertFirmwareError(self)
+
+  def testEcNotPresent(self):
+    """Verify error when EC firmware file not found."""
+    self.mock_cres.output = '\n'.join(['test line 1',
+                                       './' + cb_constants.BIOS_NAME])
+    _AssertFirmwareError(self)
+
+  def testBiosNotPresent(self):
+    """Verify error when BIOS firmware file not found."""
+    self.mock_cres.output = '\n'.join(['test line 1',
+                                       './' + cb_constants.EC_NAME])
+    _AssertFirmwareError(self)
+
+  def testRenamingFails(self):
+    """Verify graceful behavior when specific naming info not provided."""
+    self.mock_cres.output = '\n'.join(['./' +  cb_constants.EC_NAME,
+                                       './' + cb_constants.BIOS_NAME])
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list),
+                              redirect_stdout=True).AndReturn(self.mock_cres)
+    self.mox.ReplayAll()
+    expected = (cb_constants.EC_NAME, cb_constants.BIOS_NAME)
+    actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
+    self.assertEqual(expected, actual)
 
 
 if __name__ == "__main__":

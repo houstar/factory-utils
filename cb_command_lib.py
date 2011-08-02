@@ -182,7 +182,7 @@ def ListFirmware(image_name, cros_fw):
   ec_pat = re.compile('EC image:.*(Alex.*)')
   ec_searches = [ec_pat.search(line) for line in lines]
   ec_matches = [match.group(1) for match in ec_searches if match]
-  if len(ec_matches):
+  if ec_matches:
     ec_name = ec_matches[0]
   else:
     logging.warning('Proper renaming of ec.bin firmware failed.')
@@ -190,7 +190,7 @@ def ListFirmware(image_name, cros_fw):
   bios_pat = re.compile('BIOS image:.*(Alex.*)')
   bios_searches = [bios_pat.search(line) for line in lines]
   bios_matches = [match.group(1) for match in bios_searches if match]
-  if len(bios_matches):
+  if bios_matches:
     bios_name = bios_matches[0]
   else:
     logging.warning('Proper renaming of bios.bin firmware failed.')
