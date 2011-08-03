@@ -50,6 +50,7 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False, cwd=None):
   stdout = None
   stderr = None
   cmd_result = CommandResult()
+  cmd_result.cmd = cmd
 
   # Modify defaults based on parameters
   if redirect_stdout:
@@ -67,9 +68,6 @@ def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False, cwd=None):
                                    'OSError running cmd %s' % ' '.join(cmd)]))
   (cmd_result.output, cmd_result.error) = proc.communicate()
   cmd_result.returncode = proc.returncode
-  if proc.returncode:
-    raise BundlingError('Nonzero return code running command %s.' %
-                        ' '.join(cmd))
   return cmd_result
 
 
@@ -349,6 +347,7 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
                             cgpt_dest)
   else:
     RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+    RunCommand(['sudo', 'chmod', '760', cgpt_dest])
   # execute script
   script_name = os.path.join(cb_constants.GITDIR,
                              'scripts',
