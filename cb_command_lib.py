@@ -208,14 +208,14 @@ def ExtractFiles(cros_fw):
     return None
   cmd_result = RunCommand([cros_fw, '--sb_extract'], redirect_stdout=True)
   output_string = cmd_result.output
-  firmdir = ''
+  # TODO(benwin) can this regex be future-proofed?
   dirsearch = re.search('/tmp/tmp[.].*', output_string)
   if dirsearch:
     firmdir = dirsearch.group()
-  if (not firmdir) or (not os.path.exists(firmdir)):
-    logging.warning('Failed to extract necessary firmware directory.')
-    return None
-  return firmdir
+    if firmdir and os.path.exists(firmdir):
+      return firmdir
+  logging.warning('Failed to extract necessary firmware directory.')
+  return None
 
 
 def ExtractFirmware(image_name, firmware_dest, mount_point):
@@ -231,8 +231,6 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     image_name: absolute file path to SSD release image binary
     firmware_dest: absolute path to directory firmware should go
     mount_point: dir  to mount SSD image, defaults to cb_constants._MOUNT_POINT
-  Returns:
-    a boolean, True when the firmware has been successfully extracted
   Raises:
     BundlingError when necessary tools are missing or SSD mounting fails.
   """
@@ -265,9 +263,7 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
   filename = os.path.join(cb_constants.TMPDIR, image_name)
   md5filename = filename + '.md5'
   if not cb_util_lib.CheckMd5(filename, md5filename):
-    logging.error('SSD image MD5 checksum did not match, image was corrupted!')
-    return False
-  return True
+    raise BundlingError('SSD image MD5 check failed, image was corrupted!')
 
 
 def ConvertRecoveryToSsd(image_name, board, recovery, force):

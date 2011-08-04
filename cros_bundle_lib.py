@@ -180,11 +180,8 @@ def MakeFactoryBundle(image_names, options):
         raise BundlingError('Directory %s exists. Use -f to overwrite.' %
                             firmware_dest)
     os.mkdir(firmware_dest)
-    if cb_command_lib.ExtractFirmware(ssd_name, firmware_dest, mount_point):
-      logging.info('Successfully extracted firmware to %s', firmware_dest)
-    else:
-      raise BundlingError('Failed to extract firmware from SSD image %s.' %
-                          ssd_name)
+    cb_command_lib.ExtractFirmware(ssd_name, firmware_dest, mount_point):
+    logging.info('Successfully extracted firmware to %s', firmware_dest)
   shutil.copy(ssd_name, bundle_dir)
   shutil.copy(rec_name, bundle_dir)
   if options.release2:

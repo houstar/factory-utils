@@ -274,6 +274,191 @@ class TestListFirmware(mox.MoxTestBase):
     self.assertEqual(expected, actual)
 
 
+class TestExtractFiles(mox.MoxTestBase):
+  """Unit tests related to ExtractFiles."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.cros_fw = '/path/to/chromeos-firmwareupdate'
+    self.fw_dir = '/tmp/tmp.ABCD'
+    self.mock_cres = cb_command_lib.CommandResult()
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+
+  def testExtractFilesSuccess(self):
+    """Verify return value when all goes well."""
+    self.mock_cres.output = 'Files extracted to ' + self.fw_dir
+    os.path.exists(self.cros_fw).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list),
+                              redirect_stdout=True).AndReturn(self.mock_cres)
+    os.path.exists(self.fw_dir).AndReturn(True)
+    self.mox.ReplayAll()
+    self.assertEqual(self.fw_dir, cb_command_lib.ExtractFiles(self.cros_fw))
+
+  def testFirmwareExtractionScriptDoesNotExist(self):
+    """Verify return value when firmware extraction script does not exist."""
+    os.path.exists(self.cros_fw).AndReturn(False)
+    self.mox.ReplayAll()
+    expected = None
+    actual = cb_command_lib.ExtractFiles(self.cros_fw)
+    self.assertEqual(expected, actual)
+
+  def testTmpDirectoryNotNamed(self):
+    """Verify return value when extractor fails to tell where it extracted.
+
+    This could be due to extraction script failing or changing output format.
+    """
+    self.fw_dir = ''
+    self.mock_cres.output = 'Not listing tmp results directory'
+    os.path.exists(self.cros_fw).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list),
+                              redirect_stdout=True).AndReturn(self.mock_cres)
+    self.mox.ReplayAll()
+    expected = None
+    actual = cb_command_lib.ExtractFiles(self.cros_fw)
+    self.assertEqual(expected, actual)
+
+  def testTmpDirectoryDoesNotExist(self):
+    """Verify return value when extractor fails."""
+    self.mock_cres.output = 'Lying that files were extracted to ' + self.fw_dir
+    os.path.exists(self.cros_fw).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list),
+                              redirect_stdout=True).AndReturn(self.mock_cres)
+    os.path.exists(self.fw_dir).AndReturn(False)
+    self.mox.ReplayAll()
+    expected = None
+    actual = cb_command_lib.ExtractFiles(self.cros_fw)
+    self.assertEqual(expected, actual)
+
+
+class TestExtractFirmware(mox.MoxTestBase):
+  """Unit tests related to ExtractFirmware."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.image_name = '/abs/path/to/image_name'
+    self.firmware_dest = '/abs/path/to/dir/firmware/should/go'
+    self.mount_point = '/mnt/ssd/here'
+    self.mox.StubOutWithMock(cb_command_lib, 'CheckEnvironment')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(os, 'listdir')
+    self.mox.StubOutWithMock(cb_command_lib, 'ListFirmware')
+    self.mox.StubOutWithMock(cb_command_lib, 'ExtractFiles')
+    self.mox.StubOutWithMock(shutil, 'copy')
+    self.mox.StubOutWithMock(cb_util_lib, 'CheckMd5')
+
+
+  def testExtractFirmwareSuccess(self):
+    """Verify behavior of quiet success when all goes well."""
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(self.mount_point).AndReturn(True)
+    os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
+    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('ec_name',
+                                                               'bios_name'))
+    cb_command_lib.ExtractFiles(IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(IsA(str), IsA(str))
+    shutil.copy(IsA(str), IsA(str))
+    shutil.copy(IsA(str), IsA(str))
+    cb_command_lib.RunCommand(IsA(list))
+    cb_util_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(True)
+    self.mox.ReplayAll()
+    cb_command_lib.ExtractFirmware(self.image_name,
+                                   self.firmware_dest,
+                                   self.mount_point)
+
+  def testCheckEnvironmentBad(self):
+    """Verify error when environment check fails."""
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(False)
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ExtractFirmware,
+                      self.image_name,
+                      self.firmware_dest,
+                      self.mount_point)
+
+  def testMountSsdFailsMountPointNotThere(self):
+    """Verify error when SSD image is not mounted."""
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(self.mount_point).AndReturn(False)
+    cb_command_lib.RunCommand(IsA(list))
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ExtractFirmware,
+                      self.image_name,
+                      self.firmware_dest,
+                      self.mount_point)
+
+  def testMountSsdFailsMountPointEmpty(self):
+    """Verify error when SSD image is not mounted."""
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(self.mount_point).AndReturn(True)
+    os.listdir(self.mount_point).AndReturn([])
+    cb_command_lib.RunCommand(IsA(list))
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ExtractFirmware,
+                      self.image_name,
+                      self.firmware_dest,
+                      self.mount_point)
+
+  def testFirmwareExtractionFails(self):
+    """Verify error when firmware extraction fails."""
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(self.mount_point).AndReturn(True)
+    os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
+    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('_ignore',
+                                                               '_ignore'))
+    cb_command_lib.ExtractFiles(IsA(str))
+    cb_command_lib.RunCommand(IsA(list))
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ExtractFirmware,
+                      self.image_name,
+                      self.firmware_dest,
+                      self.mount_point)
+
+  def testImageCorrupted(self):
+    """Verify error when firmware extraction corrupts SSD image.
+
+    The primary motivator is potentially calling mount_gpt_image.sh improperly.
+    """
+    cb_command_lib.CheckEnvironment(self.image_name,
+                                    self.firmware_dest,
+                                    self.mount_point).AndReturn(True)
+    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(self.mount_point).AndReturn(True)
+    os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
+    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('_ignore',
+                                                               '_ignore'))
+    cb_command_lib.ExtractFiles(IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(IsA(str), IsA(str))
+    shutil.copy(IsA(str), IsA(str))
+    shutil.copy(IsA(str), IsA(str))
+    cb_command_lib.RunCommand(IsA(list))
+    cb_util_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(False)
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.ExtractFirmware,
+                      self.image_name,
+                      self.firmware_dest,
+                      self.mount_point)
+
+
 if __name__ == "__main__":
   logging.basicConfig(level=logging.CRITICAL)
   unittest.main()
