@@ -23,6 +23,7 @@ import cb_util_lib
 from mox import IsA
 
 from cb_constants import BundlingError
+from cb_url_lib import NameResolutionError
 
 
 def _CleanUp(obj):
@@ -39,10 +40,10 @@ def _CleanUp(obj):
 
 
 def _AssertFirmwareError(obj):
-  """Common logic to assert an error will be raised while listing firmware.
+  """Common logic to assert an error while listing firmware.
 
   Args:
-    obj: an instance of mox.MoxTestBase
+    obj: an instance of mox.MoxTestBase pertaining to ListFirmware
   """
   obj.mox.StubOutWithMock(os.path, 'exists')
   obj.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
@@ -54,6 +55,30 @@ def _AssertFirmwareError(obj):
                    cb_command_lib.ListFirmware,
                    obj.image_name,
                    obj.cros_fw)
+
+
+def _AssertInstallCgptError(obj):
+  """Common logic to assert an error while installing cgpt utility."""
+  obj.mox.ReplayAll()
+  obj.assertRaises(BundlingError,
+                   cb_command_lib.InstallCgpt,
+                   obj.index_page,
+                   obj.force)
+
+
+def _AssertConvertRecoveryError(obj):
+  """Common logic to assert an error while converting recovery image.
+
+  Args:
+    obj: an instance of mox.MoxTestBase pertaining to ConvertRecoveryToSsd
+  """
+  obj.mox.ReplayAll()
+  obj.assertRaises(BundlingError,
+                   cb_command_lib.ConvertRecoveryToSsd,
+                   obj.image_name,
+                   obj.board,
+                   obj.recovery,
+                   obj.force)
 
 
 # RunCommand tested in <chromeos_root>/chromite/lib/cros_build_lib_unittest.py
@@ -457,6 +482,334 @@ class TestExtractFirmware(mox.MoxTestBase):
                       self.image_name,
                       self.firmware_dest,
                       self.mount_point)
+
+
+class TestHandleGitExists(mox.MoxTestBase):
+  """Unit tests related to HandleGitExists."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.force = False
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'AskUserConfirmation')
+    self.mox.StubOutWithMock(shutil, 'rmtree')
+    self.mox.StubOutWithMock(os, 'mkdir')
+
+  def testGitDoesNotExist(self):
+    """Verify behavior when no git directory exists."""
+    os.path.exists(cb_constants.GITDIR).AndReturn(False)
+    os.mkdir(cb_constants.GITDIR)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleGitExists(self.force)
+
+  def testGitExistsNoForceUserConfirmsOverwrite(self):
+    """Verify behavior when git files exist, user confirms overwrite."""
+    os.path.exists(cb_constants.GITDIR).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
+    shutil.rmtree(cb_constants.GITDIR)
+    os.mkdir(cb_constants.GITDIR)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleGitExists(self.force)
+
+  def testGitExistsNoForceNoConfirm(self):
+    """Verify error when git files exist, no overwrite confirmation."""
+    os.path.exists(cb_constants.GITDIR).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.HandleGitExists,
+                      self.force)
+
+  def testGitExistsForceOverwrite(self):
+    """Verify behavior when git files exist, script options allow overwrite."""
+    self.force = True
+    os.path.exists(cb_constants.GITDIR).AndReturn(True)
+    shutil.rmtree(cb_constants.GITDIR)
+    os.mkdir(cb_constants.GITDIR)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleGitExists(self.force)
+
+
+class TestHandleSsdExists(mox.MoxTestBase):
+  """Unit tests related to HandleSsdExists."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.ssd_name = '/path/to/ssd_image'
+    self.force = False
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'AskUserConfirmation')
+
+  def testSsdDoesNotExist(self):
+    """Verify behavior when no ssd image exists."""
+    os.path.exists(self.ssd_name).AndReturn(False)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+
+  def testSsdExistsNoForceUserConfirmsOverwrite(self):
+    """Verify behavior when ssd image exists, user confirms overwrite."""
+    os.path.exists(self.ssd_name).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+
+  def testSsdExistsNoForceNoConfirm(self):
+    """Verify error when ssd image exists, no overwrite confirmation."""
+    os.path.exists(self.ssd_name).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    self.mox.ReplayAll()
+    self.assertRaises(BundlingError,
+                      cb_command_lib.HandleSsdExists,
+                      self.ssd_name,
+                      self.force)
+
+  def testSsdExistsForceOverwrite(self):
+    """Verify behavior when ssd exists, script options allow overwrite."""
+    self.force = True
+    os.path.exists(self.ssd_name).AndReturn(True)
+    self.mox.ReplayAll()
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+
+
+class TestInstallCgpt(mox.MoxTestBase):
+  """Unit tests related to InstallCgpt."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.index_page = 'index_page'
+    self.force = False
+    self.mox.StubOutWithMock(cb_url_lib, 'Download')
+    self.mox.StubOutWithMock(cb_util_lib, 'ZipExtract')
+    self.mox.StubOutWithMock(os.path, 'exists')
+    self.mox.StubOutWithMock(cb_command_lib, 'AskUserConfirmation')
+    self.mox.StubOutWithMock(cb_command_lib, 'MoveCgpt')
+
+  def testAuGenDownloadFails(self):
+    """Verify error when download of au-generator zip fails."""
+    cb_url_lib.Download(IsA(str)).AndReturn(False)
+    _AssertInstallCgptError(self)
+
+  def testExtractCgptFails(self):
+    """Verify error when cgpt is not extracted from au-generator zip."""
+    cb_url_lib.Download(IsA(str)).AndReturn(True)
+    cb_util_lib.ZipExtract(IsA(str),
+                           'cgpt',
+                           path=cb_constants.TMPDIR).AndReturn(False)
+    _AssertInstallCgptError(self)
+
+  def testCgptExistsNoForceNoConfirm(self):
+    """Verify error when cgpt already exists at desired location."""
+    cb_url_lib.Download(IsA(str)).AndReturn(True)
+    cb_util_lib.ZipExtract(IsA(str),
+                           'cgpt',
+                           path=cb_constants.TMPDIR).AndReturn(True)
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    _AssertInstallCgptError(self)
+
+  def testCgptExistsNoForceUserConfirmsOverwrite(self):
+    """Verify behavior when cgpt already exists and user confirms overwrite."""
+    cb_url_lib.Download(IsA(str)).AndReturn(True)
+    cb_util_lib.ZipExtract(IsA(str),
+                           'cgpt',
+                           path=cb_constants.TMPDIR).AndReturn(True)
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
+    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    self.mox.ReplayAll()
+    cb_command_lib.InstallCgpt(self.index_page, self.force)
+
+  def testCgptExistsForceOverwrite(self):
+    """Verify behavior when cgpt exists and script input allows overwrite."""
+    self.force = True
+    cb_url_lib.Download(IsA(str)).AndReturn(True)
+    cb_util_lib.ZipExtract(IsA(str),
+                           'cgpt',
+                           path=cb_constants.TMPDIR).AndReturn(True)
+    os.path.exists(IsA(str)).AndReturn(True)
+    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    self.mox.ReplayAll()
+    cb_command_lib.InstallCgpt(self.index_page, self.force)
+
+  def testCgptDoesNotExist(self):
+    """Verify behavior when cgpt can be installed fresh."""
+    cb_url_lib.Download(IsA(str)).AndReturn(True)
+    cb_util_lib.ZipExtract(IsA(str),
+                           'cgpt',
+                           path=cb_constants.TMPDIR).AndReturn(True)
+    os.path.exists(IsA(str)).AndReturn(False)
+    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    self.mox.ReplayAll()
+    cb_command_lib.InstallCgpt(self.index_page, self.force)
+
+
+class TestResolveRecoveryUrl(mox.MoxTestBase):
+  """Unit tests related to ResolveRecoveryUrl."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.image_name = '/abs/path/to/image_name'
+    self.board = 'board-name'
+    self.recovery = 'rec_no/rec_channel/rec_key'
+    self.index_page = 'index_page'
+    self.rec_pat = 'recovery_image_name_pattern'
+    self.rec_url = 'recovery_image_url'
+    self.mox.StubOutWithMock(cb_name_lib, 'GetRecoveryName')
+    self.mox.StubOutWithMock(cb_url_lib, 'DetermineUrl')
+
+  def testDefaultNamingSucceeds(self):
+    """Verify return value when default naming resolution works."""
+    cb_name_lib.GetRecoveryName(self.board,
+                                self.recovery).AndReturn((self.index_page,
+                                                          self.rec_pat))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            self.rec_pat).AndReturn(self.rec_url)
+    self.mox.ReplayAll()
+    expected = (self.rec_url, self.index_page)
+    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
+                                               self.board,
+                                               self.recovery)
+    self.assertEqual(expected, actual)
+
+  def testAlternativeNamingSucceeds(self):
+    """Verify return value when alternative naming resolution works."""
+    cb_name_lib.GetRecoveryName(
+      self.board, self.recovery).AndRaise(NameResolutionError(''))
+    cb_name_lib.GetRecoveryName(self.board,
+                                self.recovery,
+                                alt_naming=True).AndReturn((self.index_page,
+                                                            self.rec_pat))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            self.rec_pat).AndReturn(self.rec_url)
+    self.mox.ReplayAll()
+    expected = (self.rec_url, self.index_page)
+    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
+                                               self.board,
+                                               self.recovery)
+    self.assertEqual(expected, actual)
+
+  def testNamingResolutionFails(self):
+    """Verify return value when naming resolution fails both times."""
+    cb_name_lib.GetRecoveryName(
+      self.board, self.recovery).AndRaise(NameResolutionError(''))
+    cb_name_lib.GetRecoveryName(
+      self.board, self.recovery, alt_naming=True).AndRaise(
+        NameResolutionError(''))
+    self.mox.ReplayAll()
+    expected = (None, None)
+    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
+                                               self.board,
+                                               self.recovery)
+    self.assertEqual(expected, actual)
+
+
+class TestConvertRecoveryToSsd(mox.MoxTestBase):
+  """Unit tests related to ConvertRecoveryToSsd."""
+
+  def setUp(self):
+    self.mox = mox.Mox()
+    self.image_name = '/abs/path/to/recovery.bin'
+    self.ssd_name = self.image_name.replace('recovery', 'ssd')
+    self.board = 'board-name'
+    self.recovery = 'rec_no/rec_channel/rec_key'
+    self.force = False
+    self.index_page = 'index_page'
+    self.rec_pat = 'recovery_image_name_pattern'
+    self.rec_url = 'recovery_image_url'
+    self.zip_url = 'zip_url'
+    self.mox.StubOutWithMock(cb_command_lib, 'HandleGitExists')
+    self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
+    self.mox.StubOutWithMock(cb_command_lib, 'ResolveRecoveryUrl')
+    self.mox.StubOutWithMock(cb_url_lib, 'DetermineUrl')
+    self.mox.StubOutWithMock(cb_url_lib, 'Download')
+    self.mox.StubOutWithMock(cb_command_lib, 'HandleSsdExists')
+    self.mox.StubOutWithMock(cb_command_lib, 'InstallCgpt')
+
+  def testConvertRecoveryToSsdSuccess(self):
+    """Verify return value when recovery to ssd conversion succeeds."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+      self.image_name, self.board, self.recovery).AndReturn(
+        (self.rec_url, self.index_page))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            IsA(str)).AndReturn(self.zip_url)
+    cb_url_lib.Download(self.zip_url).AndReturn(True)
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+    cb_command_lib.InstallCgpt(self.index_page, self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    self.mox.ReplayAll()
+    actual = cb_command_lib.ConvertRecoveryToSsd(self.image_name,
+                                                 self.board,
+                                                 self.recovery,
+                                                 self.force)
+    self.assertEqual(self.ssd_name, actual)
+
+  def testGitExistsNotHandled(self):
+    """Verify error when git files exist, user does not confirm overwrite."""
+    cb_command_lib.HandleGitExists(self.force).AndRaise(BundlingError(''))
+    _AssertConvertRecoveryError(self)
+
+  def testRecoveryNameNotResolved(self):
+    """Verify error when recovery image url cannot be determined."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(self.image_name,
+                                      self.board,
+                                      self.recovery).AndReturn((None, None))
+    _AssertConvertRecoveryError(self)
+
+  def testCannotDetermineBaseImageZipUrl(self):
+    """Verify error when anme of zip with base image cannot be determined."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+      self.image_name, self.board, self.recovery).AndReturn(
+        (self.rec_url, self.index_page))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            IsA(str)).AndReturn(None)
+    _AssertConvertRecoveryError(self)
+
+  def testBaseImageZipDownloadFails(self):
+    """Verify error when zip containing base image is not downloaded."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+      self.image_name, self.board, self.recovery).AndReturn(
+        (self.rec_url, self.index_page))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            IsA(str)).AndReturn(self.zip_url)
+    cb_url_lib.Download(self.zip_url).AndReturn(False)
+    _AssertConvertRecoveryError(self)
+
+  def testSsdImageExistsNoConfirm(self):
+    """Verify error when SSD image exists, user does not confirm overwrite."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+      self.image_name, self.board, self.recovery).AndReturn(
+        (self.rec_url, self.index_page))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            IsA(str)).AndReturn(self.zip_url)
+    cb_url_lib.Download(self.zip_url).AndReturn(True)
+    cb_command_lib.HandleSsdExists(self.ssd_name,
+                                   self.force).AndRaise(BundlingError(''))
+    _AssertConvertRecoveryError(self)
+
+  def testInstallCgptFails(self):
+    """Verify error when installing cgpt utility fails."""
+    cb_command_lib.HandleGitExists(self.force)
+    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+      self.image_name, self.board, self.recovery).AndReturn(
+        (self.rec_url, self.index_page))
+    cb_url_lib.DetermineUrl(self.index_page,
+                            IsA(str)).AndReturn(self.zip_url)
+    cb_url_lib.Download(self.zip_url).AndReturn(True)
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+    cb_command_lib.InstallCgpt(self.index_page,
+                               self.force).AndRaise(BundlingError(''))
+    _AssertConvertRecoveryError(self)
 
 
 if __name__ == "__main__":

@@ -97,7 +97,9 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
     firmware_dest: absolute path to directory firmware should go
     mount_point: dir to mount SSD image, defaults to cb_constants._MOUNT_POINT
   Returns:
-     a boolean, True when the conditions checked are all satisfied
+    a boolean, True when the conditions checked are all satisfied
+  Raises:
+    BundlingError when running a command fails
   """
   # TODO(benwin) refactor so this check comes at the beginning of the script
   res = True
@@ -266,21 +268,14 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     raise BundlingError('SSD image MD5 check failed, image was corrupted!')
 
 
-def ConvertRecoveryToSsd(image_name, board, recovery, force):
-  """Converts a recovery image into an SSD image.
+def HandleGitExists(force):
+  """Detect if git directory already exists and handle overwrite confirmation.
 
   Args:
-    image_name: absolute path name of recovery image to convert
-    board: board name of recovery image to convert
-    recovery: recovery image version/channel/signing_key
     force: a boolean, True when any existing bundle files can be deleted
-  Returns:
-    a string, the absolute path name of the extracted SSD image
-  Throws:
-    BundlingError when resources not found or conversion fails.
+  Raises:
+    BundlingError when git directory exists and user does not confirm overwrite
   """
-  # TODO(benwin) refactor to modularize
-  # fetch convert_recovery_to_full_ssd.sh
   if os.path.exists(cb_constants.GITDIR):
     if force:
       shutil.rmtree(cb_constants.GITDIR)
@@ -293,33 +288,49 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
         os.mkdir(cb_constants.GITDIR)
       else:
         raise BundlingError('Vboot git repo exists, use -f to update')
-  RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
-  # fetch zip containing chromiumos_base_image
-  try:
-    index_page, rec_pat = cb_name_lib.GetRecoveryName(board, recovery)
-    rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
-  except cb_url_lib.NameResolutionError:
-    index_page, rec_pat = cb_name_lib.GetRecoveryName(board,
-                                          recovery,
-                                          alt_naming=True)
-    rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
-  if not rec_url:
-    raise BundlingError('Could not find match for pattern %s at %s.' %
-                        (rec_pat, rec_url))
-  rec_no = recovery.split('/')[0]
-  zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
-  zip_url = cb_url_lib.DetermineUrl(index_page, zip_pat)
-  if not cb_url_lib.Download(zip_url):
-    raise BundlingError('Failed to download %s.' % zip_url)
-  zip_name = os.path.join(cb_constants.TMPDIR, os.path.basename(zip_url))
-  ssd_name = image_name.replace('recovery', 'ssd')
+  else:
+    os.mkdir(cb_constants.GITDIR)
+
+
+def HandleSsdExists(ssd_name, force):
+  """Detect if ssd image already exists and handle overwrite confirmation.
+
+  Args:
+    ssd_name: absolute path name of ssd image to check for
+    force: a boolean, True when any existing bundle files can be deleted
+  Raises:
+    BundlingError when ssd image exists and user does not confirm overwrite
+  """
   if os.path.exists(ssd_name):
     if not force:
       msg = 'SSD file %s already exists, please confirm overwrite' % ssd_name
       if not AskUserConfirmation(msg):
         raise BundlingError('File %s already exists, use -f to overwrite' %
                             ssd_name)
-  # put cgpt in the path
+
+
+def MoveCgpt(cgpt_file, dest_file):
+  """Concentrate logic to move cgpt and assign permissions.
+
+  Args:
+    cgpt_file: absolute path to cgpt file
+    dest_file: absolute pathname of file destination
+  Raises:
+    BundlingError when a command fails
+  """
+  RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+  RunCommand(['sudo', 'chmod', '760', cgpt_dest])
+
+
+def InstallCgpt(index_page, force):
+  """Install necessary cgpt utility on the sudo path.
+
+  Args:
+    index_page: html page to download au-generator containing correct cgpt
+    force: a boolean, True when any existing bundle files can be deleted
+  Raises:
+    BundlingError when resource fetch and extract fails or overwrite is denied
+  """
   au_gen_url = os.path.join(index_page, cb_constants.AU_GEN)
   if not cb_url_lib.Download(au_gen_url):
     raise BundlingError('Necessary resource %s could not be fetched.' %
@@ -332,19 +343,79 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   cgpt_dest = os.path.join(cb_constants.SUDO_DIR, 'cgpt')
   if os.path.exists(cgpt_dest):
     if force:
-      RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+      MoveCgpt(cgpt_name, cgpt_dest)
     else:
       msg = 'cgpt exists at %s, please confirm update' % cgpt_dest
       if AskUserConfirmation(msg):
-        RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
+        MoveCgpt(cgpt_name, cgpt_dest)
       else:
         raise BundlingError('Necessary utility cgpt already exists at %s, use '
                             '-f to overwrite with newest version.' %
                             cgpt_dest)
   else:
-    RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
-    RunCommand(['sudo', 'chmod', '760', cgpt_dest])
-  # execute script
+    MoveCgpt(cgpt_name, cgpt_dest)
+
+
+def ResolveRecoveryUrl(image_name, board, recovery):
+  """Resolve URL for a recovery image, retry on an alternative naming scheme.
+
+  Args:
+    image_name: absolute path name of recovery image to convert
+    board: board name of recovery image to convert
+    recovery: a string containing recovery image version/channel/signing_key
+  Returns:
+    a string, the resolved URL or (None, None) on failure
+  """
+  rec_url = None
+  index_page = None
+  try:
+    index_page, rec_pat = cb_name_lib.GetRecoveryName(board, recovery)
+    rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
+  except cb_url_lib.NameResolutionError:
+    try:
+      index_page, rec_pat = cb_name_lib.GetRecoveryName(board,
+                                                        recovery,
+                                                        alt_naming=True)
+      rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
+    except cb_url_lib.NameResolutionError:
+      # let caller log error
+      pass
+  return (rec_url, index_page)
+
+
+def ConvertRecoveryToSsd(image_name, board, recovery, force):
+  """Converts a recovery image into an SSD image.
+
+  Args:
+    image_name: absolute path name of recovery image to convert
+    board: board name of recovery image to convert
+    recovery: a string containing recovery image version/channel/signing_key
+    force: a boolean, True when any existing bundle files can be deleted
+  Returns:
+    a string, the absolute path name of the extracted SSD image
+  Raises:
+    BundlingError when resources not found or conversion fails.
+  """
+  # fetch convert_recovery_to_full_ssd.sh
+  HandleGitExists(force)
+  RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
+  # fetch zip containing chromiumos_base_image
+  (rec_url, index_page) = ResolveRecoveryUrl(image_name, board, recovery)
+  if not rec_url:
+    raise BundlingError('Could not find URL match for recovery version %s.' %
+                        recovery)
+  rec_no = recovery.split('/')[0]
+  zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
+  zip_url = cb_url_lib.DetermineUrl(index_page, zip_pat)
+  if not zip_url:
+    raise BundlingError('Failed to determine name of zip file for pattern %s '
+                        'on page %s' % (zip_pat, index_page))
+  if not cb_url_lib.Download(zip_url):
+    raise BundlingError('Failed to download %s.' % zip_url)
+  zip_name = os.path.join(cb_constants.TMPDIR, os.path.basename(zip_url))
+  ssd_name = image_name.replace('recovery', 'ssd')
+  HandleSsdExists(ssd_name, force)
+  InstallCgpt(index_page, force)
   script_name = os.path.join(cb_constants.GITDIR,
                              'scripts',
                              'image_signing',
