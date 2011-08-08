@@ -8,13 +8,13 @@
 import logging
 import os
 
-TMPDIR = '/usr/local/google/cros_bundle/tmp'
+WORKDIR = '/usr/local/google/cros_bundle/tmp'
 PREFIX = 'http://chromeos-images/chromeos-official'
 EC_NAME = 'ec.bin'
 BIOS_NAME = 'bios.bin'
 MOUNT_POINT = '/tmp/m'
 GITURL = 'http://git.chromium.org/chromiumos/platform/vboot_reference.git'
-GITDIR = os.path.join(TMPDIR, 'vboot_reference')
+GITDIR = os.path.join(WORKDIR, 'vboot_reference')
 # TODO(benwin) update to production value once it is determined
 GSD_BUCKET = 'gs://chromeos-download-test'
 AU_GEN = 'au-generator.zip'

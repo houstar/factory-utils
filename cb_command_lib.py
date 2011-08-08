@@ -5,10 +5,10 @@
 
 """This module contains methods interfacing with pre-existing tools."""
 
+import cb_archive_hashing_lib
 import cb_constants
 import cb_name_lib
 import cb_url_lib
-import cb_util_lib
 import logging
 import re
 import os
@@ -16,6 +16,7 @@ import shutil
 import subprocess
 
 from cb_constants import BundlingError
+from cb_name_lib import ResolveRecoveryUrl
 
 
 class CommandResult(object):
@@ -244,7 +245,7 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     # mount SSD image at mount_point
     logging.info('Mounting SSD image.')
     RunCommand(['./mount_gpt_image.sh', '--read_only', '--safe',
-                '--from=' + cb_constants.TMPDIR, '--image=' + image,
+                '--from=' + cb_constants.WORKDIR, '--image=' + image,
                 '--rootfs_mountpt=' + mount_point])
     if not os.path.exists(mount_point) or not os.listdir(mount_point):
       raise BundlingError('Failed to mount SSD image at mount point %s' %
@@ -262,9 +263,9 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     shutil.copy(cros_fw, firmware_dest)
   finally:
     RunCommand(['./mount_gpt_image.sh', '--unmount'])
-  filename = os.path.join(cb_constants.TMPDIR, image_name)
+  filename = os.path.join(cb_constants.WORKDIR, image_name)
   md5filename = filename + '.md5'
-  if not cb_util_lib.CheckMd5(filename, md5filename):
+  if not cb_archive_hashing_lib.CheckMd5(filename, md5filename):
     raise BundlingError('SSD image MD5 check failed, image was corrupted!')
 
 
@@ -318,8 +319,8 @@ def MoveCgpt(cgpt_file, dest_file):
   Raises:
     BundlingError when a command fails
   """
-  RunCommand(['sudo', 'cp', cgpt_name, cgpt_dest])
-  RunCommand(['sudo', 'chmod', '760', cgpt_dest])
+  RunCommand(['sudo', 'cp', cgpt_file, dest_file])
+  RunCommand(['sudo', 'chmod', '760', dest_file])
 
 
 def InstallCgpt(index_page, force):
@@ -335,9 +336,11 @@ def InstallCgpt(index_page, force):
   if not cb_url_lib.Download(au_gen_url):
     raise BundlingError('Necessary resource %s could not be fetched.' %
                         au_gen_url)
-  au_gen_name = os.path.join(cb_constants.TMPDIR, cb_constants.AU_GEN)
-  cgpt_name = os.path.join(cb_constants.TMPDIR, 'cgpt')
-  if not cb_util_lib.ZipExtract(au_gen_name, 'cgpt', path=cb_constants.TMPDIR):
+  au_gen_name = os.path.join(cb_constants.WORKDIR, cb_constants.AU_GEN)
+  cgpt_name = os.path.join(cb_constants.WORKDIR, 'cgpt')
+  if not cb_archive_hashing_lib.ZipExtract(au_gen_name,
+                                           'cgpt',
+                                           path=cb_constants.WORKDIR):
     raise BundlingError('Could not extract necesary resource %s from %s.' %
                         (cgpt_name, au_gen_name))
   cgpt_dest = os.path.join(cb_constants.SUDO_DIR, 'cgpt')
@@ -354,33 +357,6 @@ def InstallCgpt(index_page, force):
                             cgpt_dest)
   else:
     MoveCgpt(cgpt_name, cgpt_dest)
-
-
-def ResolveRecoveryUrl(image_name, board, recovery):
-  """Resolve URL for a recovery image, retry on an alternative naming scheme.
-
-  Args:
-    image_name: absolute path name of recovery image to convert
-    board: board name of recovery image to convert
-    recovery: a string containing recovery image version/channel/signing_key
-  Returns:
-    a string, the resolved URL or (None, None) on failure
-  """
-  rec_url = None
-  index_page = None
-  try:
-    index_page, rec_pat = cb_name_lib.GetRecoveryName(board, recovery)
-    rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
-  except cb_url_lib.NameResolutionError:
-    try:
-      index_page, rec_pat = cb_name_lib.GetRecoveryName(board,
-                                                        recovery,
-                                                        alt_naming=True)
-      rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
-    except cb_url_lib.NameResolutionError:
-      # let caller log error
-      pass
-  return (rec_url, index_page)
 
 
 def ConvertRecoveryToSsd(image_name, board, recovery, force):
@@ -400,10 +376,17 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   HandleGitExists(force)
   RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
   # fetch zip containing chromiumos_base_image
-  (rec_url, index_page) = ResolveRecoveryUrl(image_name, board, recovery)
+  (rec_url, index_page) = cb_name_lib.RunWithNamingRetries(None,
+                                                           ResolveRecoveryUrl,
+                                                           image_name,
+                                                           board,
+                                                           recovery)
+  if not index_page:
+    raise BundlingError('All naming schemes failed attempting to resolve '
+                        'recovery URL for recovery version %s' % recovery)
   if not rec_url:
-    raise BundlingError('Could not find URL match for recovery version %s.' %
-                        recovery)
+    raise BundlingError('Could not find URL match for recovery version %s on '
+                        'page %s' % (recovery, index_page))
   rec_no = recovery.split('/')[0]
   zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
   zip_url = cb_url_lib.DetermineUrl(index_page, zip_pat)
@@ -412,7 +395,7 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
                         'on page %s' % (zip_pat, index_page))
   if not cb_url_lib.Download(zip_url):
     raise BundlingError('Failed to download %s.' % zip_url)
-  zip_name = os.path.join(cb_constants.TMPDIR, os.path.basename(zip_url))
+  zip_name = os.path.join(cb_constants.WORKDIR, os.path.basename(zip_url))
   ssd_name = image_name.replace('recovery', 'ssd')
   HandleSsdExists(ssd_name, force)
   InstallCgpt(index_page, force)

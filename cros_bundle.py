@@ -41,6 +41,7 @@ Usage: to download and repackage factory bundle files, convert recovery to ssd
 
 import cb_command_lib
 import cb_constants
+import cb_name_lib
 import cb_url_lib
 import cros_bundle_lib
 import logging
@@ -120,10 +121,10 @@ def main():
     BundlingError when image fetch or bundle processing fail.
   """
   (options, parser) = HandleParseOptions()
-  if not os.path.exists(cb_constants.TMPDIR):
-    os.makedirs(cb_constants.TMPDIR)
+  if not os.path.exists(cb_constants.WORKDIR):
+    os.makedirs(cb_constants.WORKDIR)
   logging.basicConfig(level=logging.DEBUG,
-                      filename=os.path.join(cb_constants.TMPDIR,
+                      filename=os.path.join(cb_constants.WORKDIR,
                                             'cros_bundle.log'))
   console = logging.StreamHandler()
   console.setLevel(options.loglevel if options.loglevel else logging.DEBUG)
@@ -135,15 +136,15 @@ def main():
     exit()
   if options.clean:
     logging.info('Cleaning up and exiting.')
-    if os.path.exists(cb_constants.TMPDIR):
-      shutil.rmtree(cb_constants.TMPDIR)
+    if os.path.exists(cb_constants.WORKDIR):
+      shutil.rmtree(cb_constants.WORKDIR)
       exit()
-  try:
-    # try default naming scheme
-    image_names = cros_bundle_lib.FetchImages(options)
-  except cb_url_lib.NameResolutionError:
-    logging.info('Trying alternative naming scheme')
-    image_names = cros_bundle_lib.FetchImages(options, alt_naming=True)
+  image_names = cb_name_lib.RunWithNamingRetries(None,
+                                                 cros_bundle_lib.FetchImages,
+                                                 options)
+  if not image_names:
+    raise BundlingError('Failed to determine URL at which to fetch images, '
+                        'please check the logged URLs attempted.')
   if not options.mount_point:
     options.mount_point = cb_constants.MOUNT_POINT
   tarname = cros_bundle_lib.MakeFactoryBundle(image_names, options)

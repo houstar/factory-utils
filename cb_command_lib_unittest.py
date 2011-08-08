@@ -14,11 +14,11 @@ import subprocess
 import tempfile
 import unittest
 
+import cb_archive_hashing_lib
 import cb_command_lib
 import cb_constants
 import cb_name_lib
 import cb_url_lib
-import cb_util_lib
 
 from mox import IsA
 
@@ -371,7 +371,7 @@ class TestExtractFirmware(mox.MoxTestBase):
     self.mox.StubOutWithMock(cb_command_lib, 'ListFirmware')
     self.mox.StubOutWithMock(cb_command_lib, 'ExtractFiles')
     self.mox.StubOutWithMock(shutil, 'copy')
-    self.mox.StubOutWithMock(cb_util_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
 
 
   def testExtractFirmwareSuccess(self):
@@ -389,7 +389,7 @@ class TestExtractFirmware(mox.MoxTestBase):
     shutil.copy(IsA(str), IsA(str))
     shutil.copy(IsA(str), IsA(str))
     cb_command_lib.RunCommand(IsA(list))
-    cb_util_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(True)
+    cb_archive_hashing_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(True)
     self.mox.ReplayAll()
     cb_command_lib.ExtractFirmware(self.image_name,
                                    self.firmware_dest,
@@ -475,7 +475,7 @@ class TestExtractFirmware(mox.MoxTestBase):
     shutil.copy(IsA(str), IsA(str))
     shutil.copy(IsA(str), IsA(str))
     cb_command_lib.RunCommand(IsA(list))
-    cb_util_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(False)
+    cb_archive_hashing_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(False)
     self.mox.ReplayAll()
     self.assertRaises(BundlingError,
                       cb_command_lib.ExtractFirmware,
@@ -579,7 +579,7 @@ class TestInstallCgpt(mox.MoxTestBase):
     self.index_page = 'index_page'
     self.force = False
     self.mox.StubOutWithMock(cb_url_lib, 'Download')
-    self.mox.StubOutWithMock(cb_util_lib, 'ZipExtract')
+    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'ZipExtract')
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'AskUserConfirmation')
     self.mox.StubOutWithMock(cb_command_lib, 'MoveCgpt')
@@ -592,17 +592,19 @@ class TestInstallCgpt(mox.MoxTestBase):
   def testExtractCgptFails(self):
     """Verify error when cgpt is not extracted from au-generator zip."""
     cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_util_lib.ZipExtract(IsA(str),
-                           'cgpt',
-                           path=cb_constants.TMPDIR).AndReturn(False)
+    cb_archive_hashing_lib.ZipExtract(
+      IsA(str),
+      'cgpt',
+      path=cb_constants.WORKDIR).AndReturn(False)
     _AssertInstallCgptError(self)
 
   def testCgptExistsNoForceNoConfirm(self):
     """Verify error when cgpt already exists at desired location."""
     cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_util_lib.ZipExtract(IsA(str),
-                           'cgpt',
-                           path=cb_constants.TMPDIR).AndReturn(True)
+    cb_archive_hashing_lib.ZipExtract(
+      IsA(str),
+      'cgpt',
+      path=cb_constants.WORKDIR).AndReturn(True)
     os.path.exists(IsA(str)).AndReturn(True)
     cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
     _AssertInstallCgptError(self)
@@ -610,9 +612,10 @@ class TestInstallCgpt(mox.MoxTestBase):
   def testCgptExistsNoForceUserConfirmsOverwrite(self):
     """Verify behavior when cgpt already exists and user confirms overwrite."""
     cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_util_lib.ZipExtract(IsA(str),
-                           'cgpt',
-                           path=cb_constants.TMPDIR).AndReturn(True)
+    cb_archive_hashing_lib.ZipExtract(
+      IsA(str),
+      'cgpt',
+      path=cb_constants.WORKDIR).AndReturn(True)
     os.path.exists(IsA(str)).AndReturn(True)
     cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
     cb_command_lib.MoveCgpt(IsA(str), IsA(str))
@@ -623,9 +626,10 @@ class TestInstallCgpt(mox.MoxTestBase):
     """Verify behavior when cgpt exists and script input allows overwrite."""
     self.force = True
     cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_util_lib.ZipExtract(IsA(str),
-                           'cgpt',
-                           path=cb_constants.TMPDIR).AndReturn(True)
+    cb_archive_hashing_lib.ZipExtract(
+      IsA(str),
+      'cgpt',
+      path=cb_constants.WORKDIR).AndReturn(True)
     os.path.exists(IsA(str)).AndReturn(True)
     cb_command_lib.MoveCgpt(IsA(str), IsA(str))
     self.mox.ReplayAll()
@@ -634,9 +638,10 @@ class TestInstallCgpt(mox.MoxTestBase):
   def testCgptDoesNotExist(self):
     """Verify behavior when cgpt can be installed fresh."""
     cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_util_lib.ZipExtract(IsA(str),
-                           'cgpt',
-                           path=cb_constants.TMPDIR).AndReturn(True)
+    cb_archive_hashing_lib.ZipExtract(
+      IsA(str),
+      'cgpt',
+      path=cb_constants.WORKDIR).AndReturn(True)
     os.path.exists(IsA(str)).AndReturn(False)
     cb_command_lib.MoveCgpt(IsA(str), IsA(str))
     self.mox.ReplayAll()

@@ -3,7 +3,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Unit tests for the cb_util_lib module."""
+"""Unit tests for the cb_archive_hashing_lib module."""
 
 import hashlib
 import logging
@@ -14,8 +14,8 @@ import tempfile
 import unittest
 import zipfile
 
+import cb_archive_hashing_lib
 import cb_command_lib
-import cb_util_lib
 
 
 def _CleanUp(obj):
@@ -57,7 +57,7 @@ class TestCheckMd5(unittest.TestCase):
     golden_file.write(hasher.hexdigest() + '  ' + filename)
     golden_file.seek(0)
     md5filename = golden_file.name
-    self.assertTrue(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertTrue(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = [filename, md5filename]
 
   def testMd5Bad(self):
@@ -70,7 +70,7 @@ class TestCheckMd5(unittest.TestCase):
     golden_file.write('This_is_likely_not_the_checksum' + '  ' + filename)
     golden_file.seek(0)
     md5filename = golden_file.name
-    self.assertFalse(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = [filename, md5filename]
 
   def testMd5FileEmpty(self):
@@ -81,7 +81,7 @@ class TestCheckMd5(unittest.TestCase):
     golden_file.write('')
     golden_file.seek(0)
     md5filename = golden_file.name
-    self.assertFalse(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = [filename, md5filename]
 
   def testMd5FileBadFormat(self):
@@ -92,14 +92,14 @@ class TestCheckMd5(unittest.TestCase):
     golden_file.write('  ')
     golden_file.seek(0)
     md5filename = golden_file.name
-    self.assertFalse(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = [filename, md5filename]
 
   def testNoCheckFile(self):
     """Verify return value when file to check does not exist."""
     filename = ''
     md5filename = ''
-    self.assertFalse(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = []
 
   def testNoMd5File(self):
@@ -107,7 +107,7 @@ class TestCheckMd5(unittest.TestCase):
     check_file = tempfile.NamedTemporaryFile()
     filename = check_file.name
     md5filename = ''
-    self.assertFalse(cb_util_lib.CheckMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.CheckMd5(filename, md5filename))
     self.clean_files = [filename]
 
 
@@ -128,14 +128,14 @@ class TestMakeMd5(unittest.TestCase):
     filename = read_file.name
     hash_file = tempfile.NamedTemporaryFile()
     md5filename = hash_file.name
-    self.assertTrue(cb_util_lib.MakeMd5(filename, md5filename))
+    self.assertTrue(cb_archive_hashing_lib.MakeMd5(filename, md5filename))
     self.clean_files = [filename, md5filename]
 
   def testNoReadFile(self):
     """Verify return value when file to read does not exist."""
     filename = ''
     md5filename = 'ignored'
-    self.assertFalse(cb_util_lib.MakeMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.MakeMd5(filename, md5filename))
     self.clean_files = []
 
   def testHashFileOpenFails(self):
@@ -143,7 +143,7 @@ class TestMakeMd5(unittest.TestCase):
     read_file = tempfile.NamedTemporaryFile()
     filename = read_file.name
     md5filename = ''
-    self.assertFalse(cb_util_lib.MakeMd5(filename, md5filename))
+    self.assertFalse(cb_archive_hashing_lib.MakeMd5(filename, md5filename))
     self.clean_files = [filename]
 
 
@@ -162,7 +162,7 @@ class ZipExtract(unittest.TestCase):
     zpf = zipfile.ZipFile(self.zipname, mode='w')
     zpf.write(myfile.name, arcname=self.filename)
     zpf.close()
-    # default from cb_util_lib
+    # default from cb_archive_hashing_lib
     self.path = os.getcwd()
 
   def tearDown(self):
@@ -171,13 +171,16 @@ class ZipExtract(unittest.TestCase):
   def testZipExtractWorksPathGiven(self):
     """Verify return value when all goes well and path provided."""
     path = tempfile.mkdtemp()
-    self.assertTrue(cb_util_lib.ZipExtract(self.zipname, self.filename, path))
+    self.assertTrue(cb_archive_hashing_lib.ZipExtract(self.zipname,
+                                                      self.filename,
+                                                      path))
     self.clean_files = []
     self.clean_dirs = [path]
 
   def testZipExtractWorksNoPathGiven(self):
     """Verify return value when all goes well and no path provided."""
-    self.assertTrue(cb_util_lib.ZipExtract(self.zipname, self.filename))
+    self.assertTrue(cb_archive_hashing_lib.ZipExtract(self.zipname,
+                                                      self.filename))
     self.clean_files = [os.path.join(self.path, self.filename)]
     self.clean_dirs = []
 
@@ -185,9 +188,9 @@ class ZipExtract(unittest.TestCase):
     """Verify return value when zip file does not contain file specified."""
     path = tempfile.mkdtemp()
     file_not_there = ''
-    self.assertFalse(cb_util_lib.ZipExtract(self.zipname,
-                                            file_not_there,
-                                            path))
+    self.assertFalse(cb_archive_hashing_lib.ZipExtract(self.zipname,
+                                                       file_not_there,
+                                                       path))
     self.clean_files = []
     self.clean_dirs = [path]
 
@@ -208,7 +211,7 @@ class TestMakeTar(unittest.TestCase):
     test_dest = tempfile.mkdtemp()
     folder_name = self.test_dir.split(os.sep)[-1]
     expected_name = os.path.join(test_dest, folder_name + '.tar.bz2')
-    actual_name = cb_util_lib.MakeTar(self.test_dir, test_dest)
+    actual_name = cb_archive_hashing_lib.MakeTar(self.test_dir, test_dest)
     self.assertEqual(expected_name, actual_name)
     self.clean_files = [test_file.name]
     self.clean_dirs = [self.test_dir, test_dest]
@@ -220,7 +223,9 @@ class TestMakeTar(unittest.TestCase):
     test_dest = tempfile.mkdtemp()
     testname = 'testname'
     expected_name = os.path.join(test_dest, testname)
-    actual_name = cb_util_lib.MakeTar(self.test_dir, test_dest, testname)
+    actual_name = cb_archive_hashing_lib.MakeTar(self.test_dir,
+                                                 test_dest,
+                                                 testname)
     self.assertEqual(expected_name, actual_name)
     self.clean_files = [test_file.name]
     self.clean_dirs = [self.test_dir, test_dest]
@@ -230,7 +235,7 @@ class TestMakeTar(unittest.TestCase):
     test_dir = ''
     test_dest = 'ignored'
     expected = None
-    actual = cb_util_lib.MakeTar(test_dir, test_dest)
+    actual = cb_archive_hashing_lib.MakeTar(test_dir, test_dest)
     self.assertEqual(expected, actual)
     self.clean_files = []
     self.clean_dirs = []
@@ -240,7 +245,7 @@ class TestMakeTar(unittest.TestCase):
     test_file_name = tempfile.NamedTemporaryFile().name
     test_dest = 'ignored'
     expected = None
-    actual = cb_util_lib.MakeTar(test_file_name, test_dest)
+    actual = cb_archive_hashing_lib.MakeTar(test_file_name, test_dest)
     self.assertEqual(expected, actual)
     self.clean_files = [test_file_name]
     self.clean_dirs = []
@@ -251,7 +256,7 @@ class TestMakeTar(unittest.TestCase):
     test_file.write('sample file content inserted here to be tarred')
     test_dest = ''
     expected = None
-    actual = cb_util_lib.MakeTar(self.test_dir, test_dest)
+    actual = cb_archive_hashing_lib.MakeTar(self.test_dir, test_dest)
     self.assertEqual(expected, actual)
     self.clean_files = [test_file.name]
     self.clean_dirs = [self.test_dir]
@@ -260,7 +265,7 @@ class TestMakeTar(unittest.TestCase):
     """Verify return value when destination directory is not a directory."""
     test_file_name = tempfile.NamedTemporaryFile().name
     expected = None
-    actual = cb_util_lib.MakeTar(self.test_dir, test_file_name)
+    actual = cb_archive_hashing_lib.MakeTar(self.test_dir, test_file_name)
     self.assertEqual(expected, actual)
     self.clean_files = [test_file_name]
     self.clean_dirs = [self.test_dir]
@@ -270,7 +275,7 @@ class TestMakeTar(unittest.TestCase):
     # pick a directory with restricted access
     test_dest = '/usr'
     expected = None
-    actual = cb_util_lib.MakeTar(self.test_dir, test_dest)
+    actual = cb_archive_hashing_lib.MakeTar(self.test_dir, test_dest)
     self.assertEqual(expected, actual)
     self.clean_files = []
     self.clean_dirs = [self.test_dir]

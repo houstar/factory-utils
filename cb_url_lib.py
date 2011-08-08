@@ -12,8 +12,8 @@ import os
 import re
 import urllib
 
+import cb_archive_hashing_lib
 import cb_constants
-import cb_util_lib
 
 from htmllib import HTMLParser
 
@@ -87,7 +87,10 @@ def DetermineUrl(url, pattern):
   usock.close()
   parser.close()
   link = MatchUrl(parser.urls, pattern)
-  return os.path.join(url, link)
+  if not link:
+    return None
+  else:
+    return os.path.join(url, link)
 
 
 def MatchUrl(url_list, pattern):
@@ -117,7 +120,7 @@ def MatchUrl(url_list, pattern):
 def Download(url):
   """Copy the contents of a file from a given URL to a local file.
 
-  Local file stored in a tmp dir specified in "cb_constants.TMPDIR" variable.
+  Local file stored in a tmp dir specified in "cb_constants.WORKDIR" variable.
   If local file exists, it will be overwritten by default.
 
   Modified from code.activestate.com/recipes/496685-downloading-a-file-from-
@@ -130,7 +133,7 @@ def Download(url):
   """
   try:
     with contextlib.closing(urllib.urlopen(url)) as web_file:
-      local_file_name = os.path.join(cb_constants.TMPDIR, url.split('/')[-1])
+      local_file_name = os.path.join(cb_constants.WORKDIR, url.split('/')[-1])
       with open(local_file_name, 'w') as local_file:
         local_file.write(web_file.read())
         return True
@@ -152,10 +155,11 @@ def DetermineThenDownloadCheckMd5(url, pattern, path, desc):
   Raises:
     BundlingError when resources cannot be fetched or download integrity fails.
   """
-  url = DetermineUrl(url, pattern)
-  if not url:
-    raise NameResolutionError(desc + ' exact URL could not be determined.')
-  return DownloadCheckMd5(url, path, desc)
+  det_url = DetermineUrl(url, pattern)
+  if not det_url:
+    raise NameResolutionError(desc + ' exact URL could not be determined '
+                              'given input: ' + ' '.join([url, pattern]))
+  return DownloadCheckMd5(det_url, path, desc)
 
 
 def CheckResourceExistsWithMd5(filename, md5filename):
@@ -169,7 +173,7 @@ def CheckResourceExistsWithMd5(filename, md5filename):
   """
   return (os.path.exists(filename) and
           os.path.exists(md5filename) and
-          cb_util_lib.CheckMd5(filename, md5filename))
+          cb_archive_hashing_lib.CheckMd5(filename, md5filename))
 
 
 def DownloadCheckMd5(url, path, desc):
@@ -197,7 +201,7 @@ def DownloadCheckMd5(url, path, desc):
       raise BundlingError(desc + ' could not be fetched.')
     if not Download(url + '.md5'):
       raise BundlingError(desc + ' MD5 could not be fetched.')
-    if not cb_util_lib.CheckMd5(name, name + '.md5'):
+    if not cb_archive_hashing_lib.CheckMd5(name, name + '.md5'):
       raise BundlingError(desc + ' MD5 checksum does not match.')
     logging.debug('MD5 checksum match succeeded for %s', name)
   return name

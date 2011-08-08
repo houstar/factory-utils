@@ -40,7 +40,7 @@ def CheckMd5(filename, md5filename):
 
 
 def MakeMd5(filename, md5filename):
-  """Generates an MD5 checksum for a file.
+  """Creates an MD5 checksum file from a provided file.
 
   Assuming directory of destination file is writable.
 
@@ -62,6 +62,26 @@ def MakeMd5(filename, md5filename):
     logging.error('Failed to compute md5 checksum for file %s.',
                   filename)
     return False
+
+
+def GenerateMd5(filename):
+  """Generates an MD5 checksum from a provided file.
+
+  Args:
+    filename: absolute path name of file to hash
+  Returns:
+    a string, the hexdigest form of the MD5 checksum, empty on failure
+  """
+  try:
+    with open(filename, 'r') as read_file:
+      hasher = hashlib.md5()
+      for chunk in iter(lambda: read_file.read(128*hasher.block_size), ''):
+        hasher.update(chunk)
+      return hasher.hexdigest()
+  except IOError:
+    logging.error('Failed to compute md5 checksum for file %s.',
+                  filename)
+    return ''
 
 
 def ZipExtract(zipname, filename, path=os.getcwd()):
