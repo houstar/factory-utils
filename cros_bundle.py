@@ -7,6 +7,8 @@
 
 This script runs outside the chroot environment in the
 <chromeos_root>/src/scripts directory.
+By default it will not include a stateful partition in the release image.
+The default recovery to ssd conversion requires a chroot setup.
 Assuming sufficient disk space in /usr partition, at least 20 GB free.
 Names bundle factory_bundle_yyyy_mm_dd.tar.bz2
 Two bundles in one day can cause naming conflicts, deleting all stored files
@@ -15,8 +17,8 @@ Two bundles in one day can cause naming conflicts, deleting all stored files
 Usage: to download and repackage factory bundle files, convert recovery to ssd
        cd /home/$USER/chromiumos/src/scripts
        python ../platform/factory-utils/cros_bundle.py
-       --board x86-alex --recovery 0.12.433.269/stable/mp
-       --factory 0.12.433.269/stable
+       --board x86-alex --recovery 0.13.587.116/beta/mp
+       --factory 0.13.587.116/beta
 
        -OR-
 
@@ -100,6 +102,11 @@ def HandleParseOptions():
   parser.add_option('--no_upload', action='store_false', dest='do_upload',
                     default=True,
                     help='disables upload to Google Storage for Developers')
+  parser.add_option('--full_ssd', action='store_true', dest='full_ssd',
+                    default=False,
+                    help='makes full release image with stateful partition')
+  parser.add_option('--chromeos_root', action='store', dest='chromeos_root',
+                    help='root directory of ChromeOS source tree checkout')
   (options, args) = parser.parse_args()
   log_level = dict(DEBUG=logging.DEBUG,
                    INFO=logging.INFO,

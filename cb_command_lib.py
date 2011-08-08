@@ -18,6 +18,12 @@ import subprocess
 from cb_constants import BundlingError
 from cb_name_lib import ResolveRecoveryUrl
 
+USER = os.environ['USER']
+HOME_DIR = '/home/%s/trunk/src' % USER
+IMG_SIGN_DIR = HOME_DIR + '/platform/vboot_reference/scripts/image_signing'
+CHROOT_ROOT = '/home/%s/chromiumos/chroot' % USER
+CHROOT_REL_DIR = 'tmp/bundle_tmp'
+
 
 class CommandResult(object):
   """An object to store various attributes of a child process.
@@ -273,7 +279,7 @@ def HandleGitExists(force):
   """Detect if git directory already exists and handle overwrite confirmation.
 
   Args:
-    force: a boolean, True when any existing bundle files can be deleted
+    force: a boolean, True when all existing bundle files can be deleted
   Raises:
     BundlingError when git directory exists and user does not confirm overwrite
   """
@@ -298,7 +304,7 @@ def HandleSsdExists(ssd_name, force):
 
   Args:
     ssd_name: absolute path name of ssd image to check for
-    force: a boolean, True when any existing bundle files can be deleted
+    force: a boolean, True when all existing bundle files can be deleted
   Raises:
     BundlingError when ssd image exists and user does not confirm overwrite
   """
@@ -328,7 +334,7 @@ def InstallCgpt(index_page, force):
 
   Args:
     index_page: html page to download au-generator containing correct cgpt
-    force: a boolean, True when any existing bundle files can be deleted
+    force: a boolean, True when all existing bundle files can be deleted
   Raises:
     BundlingError when resource fetch and extract fails or overwrite is denied
   """
@@ -359,19 +365,45 @@ def InstallCgpt(index_page, force):
     MoveCgpt(cgpt_name, cgpt_dest)
 
 
-def ConvertRecoveryToSsd(image_name, board, recovery, force):
+def ConvertRecoveryToSsd(image_name, options):
   """Converts a recovery image into an SSD image.
+
+  Default ssd option requires chroot setup and script running in src/scripts.
 
   Args:
     image_name: absolute path name of recovery image to convert
-    board: board name of recovery image to convert
-    recovery: a string containing recovery image version/channel/signing_key
-    force: a boolean, True when any existing bundle files can be deleted
+    options: an object containing inputs to the script
+      please see cros_bundle_lib/CheckBundleInputs for possibilities
   Returns:
     a string, the absolute path name of the extracted SSD image
   Raises:
     BundlingError when resources not found or conversion fails.
   """
+  if options.full_ssd:
+    # TODO(benwin) convert recovery image to full ssd image inside chroot
+    return RecoveryToFullSsdNoChroot(image_name, options)
+  return RecoveryToStandardSsd(image_name, options)
+
+
+def RecoveryToFullSsdNoChroot(image_name, options):
+  """Converts a recovery image into an SSD image with stateful partition.
+
+  This method does not depend on a chroot setup.
+
+  Args:
+    image_name: absolute path name of recovery image to convert
+    options: an object containing inputs to the script
+      please see cros_bundle_lib/CheckBundleInputs for possibilities
+  Returns:
+    a string, the absolute path name of the extracted SSD image
+  Raises:
+    BundlingError when resources not found or conversion fails.
+  """
+  force = options.force
+  board = options.board
+  recovery = options.recovery
+  ssd_name = image_name.replace('recovery', 'ssd')
+  HandleSsdExists(ssd_name, force)
   # fetch convert_recovery_to_full_ssd.sh
   HandleGitExists(force)
   RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
@@ -396,8 +428,6 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   if not cb_url_lib.Download(zip_url):
     raise BundlingError('Failed to download %s.' % zip_url)
   zip_name = os.path.join(cb_constants.WORKDIR, os.path.basename(zip_url))
-  ssd_name = image_name.replace('recovery', 'ssd')
-  HandleSsdExists(ssd_name, force)
   InstallCgpt(index_page, force)
   script_name = os.path.join(cb_constants.GITDIR,
                              'scripts',
@@ -406,6 +436,107 @@ def ConvertRecoveryToSsd(image_name, board, recovery, force):
   RunCommand([script_name, image_name, zip_name, ssd_name])
   # TODO(benwin) consider cleaning up resources based on command line flag
   return ssd_name
+
+
+def RecoveryToStandardSsd(image_name, options):
+  """Converts a recovery image into an SSD image.
+
+  Assumes a chroot setup.
+  Requires sudo privileges to run enter_chroot.
+  Requires the script to run in <ChromeOS_root>/src/scripts.
+
+  Args:
+    image_name: absolute path name of recovery image to convert
+    options: an object containing inputs to the script
+      please see cros_bundle_lib/CheckBundleInputs for possibilities
+  Returns:
+    a string, the absolute path name of the extracted SSD image
+  Raises:
+    BundlingError when resources not found or conversion fails.
+  """
+  force = options.force
+  board = options.board
+  recovery = options.recovery
+  chromeos_root = options.chromeos_root
+  if not re.search('/src/scripts$', os.getcwd()):
+    raise BundlingError('ConvertRecoveryToSsd must be run from src/scripts.')
+  image_dir = os.path.dirname(image_name)
+  ssd_name = image_name.replace('recovery', 'ssd')
+  HandleSsdExists(ssd_name, force)
+  # make copy of recovery image to consume
+  if not options.chromeos_root:
+    chroot_work_dir = os.path.join(CHROOT_ROOT, CHROOT_REL_DIR)
+  else:
+    if not (chromeos_root and os.path.isdir(chromeos_root)):
+      raise BundlingError('Provided ChromeOS source tree root %s does not '
+                          'exist or is not a directory' % chromeos_root)
+    chroot_work_dir = os.path.join(chromeos_root, 'chroot', CHROOT_REL_DIR)
+  # ensure we have a chroot to work in
+  chroot_work_parent_dir = re.match('(.*/).*', chroot_work_dir).group(1)
+  if not os.path.exists(chroot_work_parent_dir):
+    raise BundlingError('Chroot environment could not be inferred, '
+                        'failed to create link %s.' % chroot_work_dir)
+  if not(chroot_work_dir and os.path.isdir(chroot_work_dir)):
+    os.mkdir(chroot_work_dir)
+  ssd_chroot_name = ssd_name.replace(image_dir, chroot_work_dir)
+  shutil.copy(image_name, ssd_chroot_name)
+  cmd = (['cros_sdk',
+          '--enter',
+          os.path.join(IMG_SIGN_DIR, 'convert_recovery_to_ssd.sh'),
+          ssd_name.replace(image_dir,
+                           ReinterpretPathForChroot(chroot_work_dir))])
+  if force:
+    cmd.insert(4, '--force')
+  RunCommand(cmd)
+  # move ssd out, clean up folder
+  shutil.move(ssd_chroot_name, ssd_name)
+  shutil.rmtree(chroot_work_dir)
+  return ssd_name
+
+
+def FindRepoDir(path=None):
+  """Returns the nearest higher-level repo dir from the specified path.
+
+  Copied verbatim from <ChromeOS_root>/chromite/lib/cros_build_lib.py.
+
+  Args:
+    path: The path to use. Defaults to cwd.
+  Returns:
+    a string, the nearest higher-level repo dir from the specified path.
+  """
+  if path is None:
+    path = os.getcwd()
+  path = os.path.abspath(path)
+  while path != '/':
+    repo_dir = os.path.join(path, '.repo')
+    if os.path.isdir(repo_dir):
+      return repo_dir
+    path = os.path.dirname(path)
+  return None
+
+
+def ReinterpretPathForChroot(path):
+  """Returns reinterpreted path from outside the chroot for use inside.
+
+  Modified insignificantly from <ChromeOS_root>/chromite/lib/cros_build_lib.py.
+
+  Args:
+    path: The path to reinterpret.  Must be in src tree.
+  Returns:
+    a string, the reinterpreted path from outside the chroot for use inside.
+  Raises:
+    BundlingError when given a path not in src tree.
+  """
+  root_path = os.path.join(FindRepoDir(path), '..')
+  path_abs_path = os.path.abspath(path)
+  root_abs_path = os.path.abspath(root_path)
+  # Strip the repository root from the path and strip first /.
+  relative_path = path_abs_path.replace(root_abs_path, '')[1:]
+  if relative_path == path_abs_path:
+    raise BundlingError('Error: '
+                        'path is outside your src tree, cannot reinterpret.')
+  new_path = os.path.join('/home', os.getenv('USER'), 'trunk', relative_path)
+  return new_path
 
 
 def AskUserConfirmation(msg):

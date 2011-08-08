@@ -30,19 +30,47 @@ def _MapOptions(options):
 class TestCrosBundle(unittest.TestCase):
   """Testing for main cros_bundle script."""
 
-  def testBundleCreation(self):
-    """Functional test of the generation of a factory bundle.
+  def tearDown(self):
+    logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
+    cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
+    cmd = ['python', '../platform/factory-utils/cros_bundle.py']
+    cmd.extend(['--clean'])
+    logging.debug('Running command: ' + ' '.join(cmd) + ' in ' + cwd)
+    RunCommand(cmd, cwd=cwd)
+
+  def testFSIBundleCreation(self):
+    """Functional test of the generation of an FSI factory bundle.
 
     In particular we implement the sample usage command for two input images
     with recovery to ssd conversion required for each.
     """
     logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
     cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
+    options = {'board':'x86-alex-he',
+               'recovery':'0.15.898.0/dev/mp',
+               'board2':'x86-alex',
+               'recovery2':'0.15.898.0/dev/mp',
+               'factory':'0.15.898.0/dev',
+               }
+    cmd = ['python', '../platform/factory-utils/cros_bundle.py']
+    cmd.extend(_MapOptions(options))
+    cmd.extend(['--full_ssd', '--fsi', '-f', '--no_upload'])
+    logging.debug('Running command: ' + ' '.join(cmd) + ' in ' + cwd)
+    cmd_res = RunCommand(cmd, cwd=cwd)
+    self.assertEqual(cmd_res.returncode, 0)
+
+  def testFactoryBundleCreation(self):
+    """Functional test of the generation of a factory bundle.
+
+    In particular we implement the sample usage command for one input image
+    with recovery to ssd conversion required and install shim needed.
+    """
+    logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
+    cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
     options = {'board':'x86-alex',
-               'recovery':'0.12.433.269/stable/mp',
-               'board2':'x86-alex-nogobi',
-               'recovery2':'0.12.433.269/stable/mp',
-               'factory':'0.12.433.269/stable',
+               'recovery':'0.13.587.116/beta/mp',
+               'factory':'0.13.587.116/beta',
+               'shim':'0.13.587.116/dev/mp',
                }
     cmd = ['python', '../platform/factory-utils/cros_bundle.py']
     cmd.extend(_MapOptions(options))

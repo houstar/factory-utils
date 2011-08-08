@@ -114,6 +114,28 @@ def GetFactoryName(board, factory, alt_naming=0):
   return (fac_url, fac_pat)
 
 
+def GetShimName(board, shim, alt_naming=0):
+  """Determines release page URL and naming pattern of desired install shim.
+
+  Args:
+    board: target board
+    shim: factory install shim version, channel, and signing key
+    alt_naming: optional try alternative build naming
+      0 - default naming scheme
+      1 - append '-rc' to board for index html page and links
+      2 - remove chromeos-official for index html page and links
+  Returns:
+    rec_url: a string, the release page URL
+    rec_pat: a string, the naming pattern for the install shim
+  """
+  (shim_url, shim_no, shim_ch, shim_key) = GetNameComponents(board,
+                                                             shim,
+                                                             alt_naming)
+  shim_pat = '_'.join(['chromeos', shim_no, board, 'factory', shim_ch,
+             shim_key + '.*[.]bin$'])
+  return (shim_url, shim_pat)
+
+
 def GetRecoveryName(board, recovery, alt_naming=0):
   """Determines release page URL and naming pattern of desired recovery image.
 

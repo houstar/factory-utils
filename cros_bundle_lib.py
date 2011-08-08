@@ -37,12 +37,24 @@ def CheckBundleInputs(image_names, options):
       'recovery': recovery image
       'recovery2': second recovery image or None
       'factorybin': factory binary
+      'shim': factory install shim
     options: an object of input arguments to the script
-      possible options include:
+      possible options are:
+        board: target board
+        board2: optional second target board
+        bundle_dir: destination root directory for factory bundle files
+        chromeos_root: user-provided root of ChromeOS source tree checkout
+        factory: factory image version/channel
+        force: a boolean, True when all existing bundle files can be deleted
         fsi: a boolean, True when processing for a Final Shipping Image
+        full_ssd: a boolean, True to make release image with stateful partition
         fw: a boolean, True when script should extract firmware
-        release2: optional second release version, channel, and signing key
-        recovery2: optional second recovery version, channel, and signing key
+        recovery: recovery image version/channel/signing_key
+        recovery2: optional second recovery version/channel/signing_key
+        release: release candidate version/channel/signing_key
+        release2: optional second release version/channel/signing_key
+        tar_dir: destination directory for factory bundle tar file
+        version: key and version for bundle naming, e.g. mp9x
   Raises:
     BundlingError when a check fails.
   """
@@ -51,7 +63,6 @@ def CheckBundleInputs(image_names, options):
                         'final shipping image.')
   ssd_name = image_names.get('ssd', None)
   rec_name = image_names.get('recovery', None)
-  fac_name = image_names.get('factorybin', None)
   msg = []
   if ssd_name:
     if not os.path.isfile(ssd_name):
@@ -63,11 +74,19 @@ def CheckBundleInputs(image_names, options):
       msg.append('Recovery image %s does not exist.' % rec_name)
   else:
     msg.append('Bundling method needs recovery image name.')
-  if fac_name:
-    if not os.path.isfile(fac_name):
-      msg.append('Factory image %s does not exist.' % fac_name)
-  else:
-    msg.append('Bundling method needs factory image name.')
+  if not options.fsi:
+    fac_name = image_names.get('factorybin', None)
+    shim_name = image_names.get('shim', None)
+    if fac_name:
+      if not os.path.isfile(fac_name):
+        msg.append('Factory image %s does not exist.' % fac_name)
+    else:
+      msg.append('Bundling method needs factory image name.')
+    if shim_name:
+      if not os.path.isfile(shim_name):
+        msg.append('Factory install shim %s does not exist.' % shim_name)
+    else:
+      msg.append('Bundling method needs factory install shim name.')
   if options.recovery2:
     # we infer second release image should exist, since script options
     # might not list second release image, implying recovery to ssd conversion
@@ -104,14 +123,9 @@ def MakeFactoryBundle(image_names, options):
       'recovery': recovery image
       'recovery2': second recovery image or None
       'factorybin': factory binary
+      'shim': signed factory install shim
     options: an object of input arguments to the script
-      possible options include:
-        fsi: a boolean, True when processing for a Final Shipping Image
-        fw: a boolean, True when script should extract firmware
-        version: key and version for bundle naming, e.g. mp9x
-        bundle_dir: destination root directory for factory bundle files
-        tar_dir: destination directory for factory bundle tar file
-        force: a boolean, True when any existing bundle files can be deleted
+      please see CheckBundleInputs above for possibilities
   Returns:
     a string, the absolute path name of the factory bundle tar created
   Raises:
@@ -133,6 +147,7 @@ def MakeFactoryBundle(image_names, options):
   rec_name = image_names.get('recovery', None)
   rec_name2 = image_names.get('recovery2', None)
   fac_name = image_names.get('factorybin', None)
+  shim_name = image_names.get('shim', None)
   if bundle_dir:
     if not os.path.isdir(bundle_dir):
       raise BundlingError('Provided directory %s does not exist.' % bundle_dir)
@@ -154,12 +169,15 @@ def MakeFactoryBundle(image_names, options):
         raise BundlingError('Directory %s exists. Use -f to overwrite.' %
                             bundle_dir)
   os.mkdir(bundle_dir)
-  release_dir = os.path.join(bundle_dir, 'release')
-  os.mkdir(release_dir)
-  recovery_dir = os.path.join(bundle_dir, 'recovery')
-  os.mkdir(recovery_dir)
-  factory_dir = os.path.join(bundle_dir, 'factory')
-  os.mkdir(factory_dir)
+  if not fsi:
+    dir_list = ['release', 'recovery', 'factory', 'shim']
+  else:
+    dir_list = ['release', 'recovery']
+  dir_dict = {}
+  for dir_name in dir_list:
+    directory = os.path.join(bundle_dir, dir_name)
+    dir_dict[dir_name] = directory
+    os.mkdir(directory)
   if tar_dir:
     if not os.path.isdir(tar_dir):
       # input given but bad
@@ -186,18 +204,18 @@ def MakeFactoryBundle(image_names, options):
     os.mkdir(firmware_dest)
     cb_command_lib.ExtractFirmware(ssd_name, firmware_dest, mount_point)
     logging.info('Successfully extracted firmware to %s', firmware_dest)
-  shutil.copy(ssd_name, release_dir)
-  shutil.copy(rec_name, recovery_dir)
+  shutil.copy(ssd_name, dir_dict.get('release', None))
+  shutil.copy(rec_name, dir_dict.get('recovery', None))
   if options.release2:
-    shutil.copy(ssd_name2, release_dir)
+    shutil.copy(ssd_name2, dir_dict.get('release', None))
   if options.recovery2:
     if not options.release2:
       # converted from recovery, still need to copy file
-      shutil.copy(ssd_name2, release_dir)
-    shutil.copy(rec_name2, recovery_dir)
+      shutil.copy(ssd_name2, dir_dict.get('release', None))
+    shutil.copy(rec_name2, dir_dict.get('recovery', None))
   if not fsi:
-    # TODO(benwin) copy install shim into bundle_dir/shim
-    shutil.copy(fac_name, factory_dir)
+    shutil.copy(shim_name, dir_dict.get('shim', None))
+    shutil.copy(fac_name, dir_dict.get('factory', None))
   MakeMd5Sums(bundle_dir)
   logging.info('Completed copying factory bundle files to %s', bundle_dir)
   logging.info('Tarring bundle files, this operation is resource-intensive.')
@@ -243,18 +261,14 @@ def MakeMd5Sums(bundle_dir):
 def FetchImages(options, alt_naming=0):
   """Fetches images for factory bundle specified by args input
 
+  Assuming second recovery implies second ssd should be made through conversion
+  Assuming install shim surfaced on index page for first recovery image
+  Default ssd conversion requires chroot setup and that this method be used
+    in current directory <ChromeOS_root>/src/scripts
+
   Args:
     options: an object containing inputs to the script
-      possible options include:
-        board: target board
-        board2: optional second target board
-        release: release candidate version, channel, and signing key
-        release2: optional second release version, channel, and signing key
-        factory: factory image version and channel
-        recovery: recovery image version, channel, and signing key
-        recovery2: optional second recovery version, channel, and signing key
-        fsi: a boolean, True when processing for Final Shipping Image
-        force: a boolean, True when any existing bundle files can be deleted
+      please see CheckBundleInputs above for possibilities
     alt_naming: optional try alternative build naming
         0 - default naming scheme
         1 - append '-rc' to board for index html page and links
@@ -266,6 +280,7 @@ def FetchImages(options, alt_naming=0):
       'recovery': recovery image
       'recovery2': second recovery image or None
       'factorybin': factory binary
+      'shim': signed factory install shim
   Raises:
     BundlingError when resources cannot be fetched.
   """
@@ -275,6 +290,7 @@ def FetchImages(options, alt_naming=0):
   release = options.release
   release2 = options.release2
   factory = options.factory
+  shim = options.shim
   recovery = options.recovery
   recovery2 = options.recovery2
   fsi = options.fsi
@@ -308,9 +324,7 @@ def FetchImages(options, alt_naming=0):
   # if needed, run recovery to ssd conversion now that we have recovery image
   if not release:
     rel_name = cb_command_lib.ConvertRecoveryToSsd(rec_name,
-                                                   options.board,
-                                                   options.recovery,
-                                                   options.force)
+                                                   options)
     if not cb_archive_hashing_lib.MakeMd5(rel_name, rel_name + '.md5'):
       raise BundlingError('Failed to create md5 checksum for file %s.' %
                           rel_name)
@@ -328,11 +342,10 @@ def FetchImages(options, alt_naming=0):
   # if provided a second recovery image but no matching ssd, run conversion
   if recovery2 and not release2:
     rel_name2 = cb_command_lib.ConvertRecoveryToSsd(rec_name2,
-                                                    options.board2,
-                                                    options.recovery2,
-                                                    options.force)
-  # Factory
+                                                    options)
+  # Factory and Shim
   if not fsi:
+    # Factory Test Image
     fac_det_url = cb_url_lib.DetermineUrl(fac_url, fac_pat)
     if not fac_det_url:
       raise BundlingError('Factory image exact URL could not be determined '
@@ -357,12 +370,28 @@ def FetchImages(options, alt_naming=0):
                                                path=cb_constants.WORKDIR):
         raise BundlingError('Could not find chromiumos_factory_image.bin '
                             'in factory image.')
-  # TODO(benwin) add naming, download, and check for factory install shim
-  image_names = dict(ssd=rel_name,
-                     ssd2=rel_name2,
-                     recovery=rec_name,
-                     recovery2=rec_name2,
-                     factorybin=absfactorybin)
+    # Factory Install Shim
+    (shim_url, shim_pat) = cb_name_lib.GetShimName(board,
+                                                   shim,
+                                                   alt_naming)
+    # shim is to be found on index page of recovery image sought, even if it
+    # has a name that suggests it would be on another channel index page
+    shim_name = DetermineThenDownloadCheckMd5(rec_url,
+                                              shim_pat,
+                                              cb_constants.WORKDIR,
+                                              'Factory Install Shim')
+  if not fsi:
+    image_names = dict(ssd=rel_name,
+                       ssd2=rel_name2,
+                       recovery=rec_name,
+                       recovery2=rec_name2,
+                       factorybin=absfactorybin,
+                       shim=shim_name)
+  else:
+    image_names = dict(ssd=rel_name,
+                       ssd2=rel_name2,
+                       recovery=rec_name,
+                       recovery2=rec_name2)
   return image_names
 
 
@@ -371,6 +400,7 @@ def CheckParseOptions(options, parser):
 
   Args:
     options: an object with the input options to the script
+      please see CheckBundleInputs above for possibilities
     parser: the OptionParser used to parse the input options
   Raises:
     BundlingError when parse options are bad
@@ -379,3 +409,7 @@ def CheckParseOptions(options, parser):
   if not options.clean and not options.factory:
     parser.print_help()
     raise BundlingError('\nMust specify factory zip version/channel.')
+  if options.force:
+    logging.info('Detected --force option, obtaining sudo privilege now.')
+    logging.info('Remove --force option to list and confirm each command.')
+    cb_command_lib.RunCommand(['sudo', '-v'])
