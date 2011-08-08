@@ -332,9 +332,6 @@ def _MakeOutput(input_path, output_path, fw_size):
     outfile: The output file.  Already contains the input and has been padded.
         Left seeked at 0.
   """
-  if not input_path:
-    raise ArgumentError("You must specify the imput image.")
-
   if not output_path:
     output_path = input_path
   else:
@@ -474,6 +471,9 @@ def _ParseOptions():
   if args:
     raise ArgumentError('Unexpected argument(s): %s' % ', '.join(args))
 
+  if not opts.input:
+    raise ArgumentError("You must specify the input image")
+
   return opts
 
 
@@ -483,8 +483,11 @@ def main():
 
   try:
     opts = _ParseOptions()
-    print 'Input:  %s (0x%08x bytes)' % (opts.input,
-                                         os.path.getsize(opts.input))
+    try:
+      print 'Input:  %s (0x%08x bytes)' % (opts.input,
+                                           os.path.getsize(opts.input))
+    except OSError:
+      raise ArgumentError("Error accessing input image: %s" % opts.input)
 
     env_vars = opts.vars + _GetSpecialEnvVars(opts)
     kernel_args = opts.args + _GetSpecialKernelArgs(opts)
