@@ -201,6 +201,8 @@ def RunWithNamingRetries(default, funcname, *args):
   alt_naming = 0
   while(alt_naming < NUM_NAMING_SCHEMES):
     try:
+      logging.info('Trying function %s with naming scheme %d' %
+                   (funcname.__name__, alt_naming))
       return funcname(*args, alt_naming=alt_naming)
     except NameResolutionError:
       logging.info('Tried naming scheme %d; trying alternative naming scheme' %

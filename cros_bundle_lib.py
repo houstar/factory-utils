@@ -413,3 +413,5 @@ def CheckParseOptions(options, parser):
     logging.info('Detected --force option, obtaining sudo privilege now.')
     logging.info('Remove --force option to list and confirm each command.')
     cb_command_lib.RunCommand(['sudo', '-v'])
+  if not options.fsi and not options.shim:
+    raise BundlingError('\nMust specify install shim for non-fsi bundle.')

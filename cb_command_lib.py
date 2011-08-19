@@ -485,8 +485,8 @@ def RecoveryToStandardSsd(image_name, options):
           os.path.join(IMG_SIGN_DIR, 'convert_recovery_to_ssd.sh'),
           ssd_name.replace(image_dir,
                            ReinterpretPathForChroot(chroot_work_dir))])
-  if force:
-    cmd.insert(4, '--force')
+  if options.force:
+    cmd.insert(5, '--force')
   RunCommand(cmd)
   # move ssd out, clean up folder
   shutil.move(ssd_chroot_name, ssd_name)

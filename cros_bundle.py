@@ -5,40 +5,7 @@
 
 """This script repackages ChromeOS images into a factory bundle.
 
-This script runs outside the chroot environment in the
-<chromeos_root>/src/scripts directory.
-By default it will not include a stateful partition in the release image.
-The default recovery to ssd conversion requires a chroot setup.
-Assuming sufficient disk space in /usr partition, at least 20 GB free.
-Names bundle factory_bundle_yyyy_mm_dd.tar.bz2
-Two bundles in one day can cause naming conflicts, deleting all stored files
-  with option --clean is recommended between uses on a single day.
-
-Usage: to download and repackage factory bundle files, convert recovery to ssd
-       cd /home/$USER/chromiumos/src/scripts
-       python ../platform/factory-utils/cros_bundle.py
-       --board x86-alex --recovery 0.13.587.116/beta/mp
-       --factory 0.13.587.116/beta
-
-       -OR-
-
-       to download and repackage factory bundle files with multiple images,
-         converting recovery to ssd for both images
-       cd /home/$USER/chromiumos/src/scripts
-       python ../platform/factory-utils/cros_bundle.py
-       --board x86-alex --recovery 0.12.433.269/stable/mp
-       --board2 x86-alex-nogobi --recovery2 0.12.433.269/stable/mp
-       --factory 0.12.433.269/stable
-
-       -OR-
-
-       to clean all files in temporary directory
-       python cros_bundle.py --clean
-
-       -OR-
-
-       to see this message
-       python cros_bundle.py --help
+Usage details in <ChromeOS_root>/src/platform/factory-utils/cros_bundle_readme.
 """
 
 import cb_command_lib
@@ -88,7 +55,8 @@ def HandleParseOptions():
                     default=False,
                     help='remove all stored bundles files in tmp storage')
   parser.add_option('--bundle_dir', action='store', dest='bundle_dir',
-                    help='absolute path to directory for factory bundle files')
+                    help='absolute directory path for factory bundle files' +
+                         ', ending is name for factory bundle tar file')
   parser.add_option('--tar_dir', action='store', dest='tar_dir',
                     help='destination directory for factory bundle tar')
   parser.add_option('--board2', action='store', type='string', dest='board2',

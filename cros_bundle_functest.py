@@ -46,38 +46,40 @@ class TestCrosBundle(unittest.TestCase):
     """
     logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
     cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
-    options = {'board':'x86-alex-he',
-               'recovery':'0.15.898.0/dev/mp',
-               'board2':'x86-alex',
-               'recovery2':'0.15.898.0/dev/mp',
-               'factory':'0.15.898.0/dev',
-               }
-    cmd = ['python', '../platform/factory-utils/cros_bundle.py']
-    cmd.extend(_MapOptions(options))
-    cmd.extend(['--full_ssd', '--fsi', '-f', '--no_upload'])
-    logging.debug('Running command: ' + ' '.join(cmd) + ' in ' + cwd)
-    cmd_res = RunCommand(cmd, cwd=cwd)
-    self.assertEqual(cmd_res.returncode, 0)
-
-  def testFactoryBundleCreation(self):
-    """Functional test of the generation of a factory bundle.
-
-    In particular we implement the sample usage command for one input image
-    with recovery to ssd conversion required and install shim needed.
-    """
-    logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
-    cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
     options = {'board':'x86-alex',
-               'recovery':'0.13.587.116/beta/mp',
-               'factory':'0.13.587.116/beta',
-               'shim':'0.13.587.116/dev/mp',
+               'recovery':'0.15.916.0/dev/mp',
+               'board2':'x86-alex-he',
+               'recovery2':'0.15.916.0/dev/mp',
+               'factory':'0.15.916.0/dev',
                }
     cmd = ['python', '../platform/factory-utils/cros_bundle.py']
     cmd.extend(_MapOptions(options))
-    cmd.extend(['-f', '--no_upload'])
+    cmd.extend(['--fsi', '-f', '--no_upload'])
     logging.debug('Running command: ' + ' '.join(cmd) + ' in ' + cwd)
     cmd_res = RunCommand(cmd, cwd=cwd)
     self.assertEqual(cmd_res.returncode, 0)
+
+#  Non-fsi test disabled due to lack of image with published install shim
+#
+#  def testFactoryBundleCreation(self):
+#    """Functional test of the generation of a factory bundle.
+#
+#    In particular we implement the sample usage command for one input image
+#    with recovery to ssd conversion required and install shim needed.
+#    """
+#    logging.info('\nAssuming ChromeOS Root is /home/$USER/chromiumos\n')
+#    cwd = '/home/' + os.environ['USER'] + '/chromiumos/src/scripts'
+#    options = {'board':'x86-alex',
+#               'recovery':'0.13.587.116/beta/mp',
+#               'factory':'0.13.587.116/beta',
+#               'shim':'0.13.587.116/dev/mp',
+#               }
+#    cmd = ['python', '../platform/factory-utils/cros_bundle.py']
+#    cmd.extend(_MapOptions(options))
+#    cmd.extend(['-f', '--no_upload'])
+#    logging.debug('Running command: ' + ' '.join(cmd) + ' in ' + cwd)
+#    cmd_res = RunCommand(cmd, cwd=cwd)
+#    self.assertEqual(cmd_res.returncode, 0)
 
 
 if __name__ == "__main__":

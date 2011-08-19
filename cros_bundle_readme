@@ -1,0 +1,207 @@
+# Copyright (c) 2011 The Chromium OS Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+Chrome OS Factory Bundle Automation Script README
+
+Usage documentation for
+<ChromeOS_root>/src/platform/factory-utils/cros_bundle.py
+
+Table of Contents
+  Script Requirements
+  Getting Started
+  Script background
+  Notes on script behavior
+  Alternate bundle naming
+  Alternate tar file destination
+  Known Limitations
+  Common Errors and Exceptions
+
+
+Script Requirements
+
+  -Chrome OS source code checkout, see Developer's Guide at
+     -> http://www.chromium.org/chromium-os/developer-guide
+  -uudecode utility found in package sharutils for mount_gpt_image.sh used
+     in ssd image firmware extraction
+     -> manual install: sudo apt-get install sharutils
+  -pbzip2 utility for parllel bzip compression of factory bundle tar file
+     -> sudo apt-get install pbzip2
+  -chroot setup for default ssd conversion
+     -> Developer's Guide above
+
+  Note: For internal use please consult documentation for building Chrome OS
+          internally as it has differing instructions.
+
+Getting Started
+
+  Convenience commands (assumed by all other examples)
+    in standard terminal:
+    >$ export CHROMEOS_ROOT=/home/$USER/chromiumos/
+    >$ cd $CHROMEOS_ROOT/src/scripts
+    >$ ln -s ../platform/factory-utils/cros_bundle.py cros_bundle
+
+  View script options
+    >$ cd $CHROMEOS_ROOT/src/scripts
+    >$ python cros_bundle --help
+
+  Sample usage command:
+    This command will create an fsi bundle with two recovery and release images
+    using the default naming scheme factory_bundle_yyyy_mm_dd.tar.bz2. It will
+    use the previously named Chrome OS source tree root and will not upload the
+    bundle produced to GSD. Runs non-interactively forcing overwrite.
+
+    >$ export CHROMEOS_ROOT=/home/$USER/chromiumos/
+    >$ cd $CHROMEOS_ROOT/src/scripts
+    >$ python cros_bundle --board x86-alex --recovery 0.15.916.0/dev/mp
+       --board2 x86-alex-he --recovery2 0.15.916.0/dev/mp
+       --factory 0.15.916.0/dev --fsi --chromeos_root $CHROMEOS_ROOT
+       --no_upload --force
+
+  Verify bundle creation:
+    The script will output the directory where the factory bundle has been
+    placed, say /usr/local/google/cros_bundle/tmp/. We verify the bundle with
+    the following commands:
+
+    >$ cd /usr/local/google/cros_bundle/tmp
+    >$ ls -lR
+    # at this point, assuming default naming, we should see directory
+    # factory_bundle_yyyy_mm_dd containing bundle files and a matching tar.bz2
+    >$ pbzip2 -d factory_bundle_yyyy_mm_dd.tar.bz2
+    # by default the bundle files used are not cleaned away, so we make a
+    # scratch directory to verify the files are those pulled from the tar
+    >$ mkdir bundle_files
+    >$ mv factory_bundle_yyyy_mm_dd.tar bundle_files
+    >$ cd bundle_files
+    >$ tar -xvf factory_bundle_yyyy_mm_dd.tar
+    >$ ls -lR factory_bundle_yyyy_mm_dd
+    # a more thorough test would be to run through a factory install process
+    # on a test device using the factory bundle tar file produced.
+
+  Cleanup command:
+    The following command will delete all temporary bundle files from the
+    default working directory named WORKDIR in cb_constants.py. Presently the
+    only script action, including logging, which creates state outside of
+    WORKDIR is the --full_ssd option, which makes cgpt available outside chroot
+    in SUDO_DIR, a constant set in cb_constants.py.
+
+    >$ python cros_bundle.py --clean
+
+Script background
+
+  Factory bundles are collections of Chrome OS images accompanied by extracted
+  image components and other scripts useful to factory partners in the
+  production of Chrome OS devices.
+
+  The process of creating bundles can be tedious, therefore an automated script
+  for their production lives in the Chrome OS source tree in the repository
+  <ChromeOS_root>/src/platform/factory-utils
+
+Notes on script behavior
+
+  - This script runs outside the chroot environment in the
+    <ChromeOS_root>/src/scripts directory.
+  - The automated bundling script runs outside the chroot environment but
+    requires a chroot to be setup for default use converting recovery to ssd.
+  - By default it will not include a stateful partition in the release image.
+  - Assumes sufficient disk space in /usr partition, at least 20 GB free.
+  - Since default naming is unique up to the day a bundle is produced, when
+    making a second bundle in one day the first will be deleted by default.
+
+Alternate bundle naming
+
+  To specify a non-default bundle name such as my_new_bundle, use the
+  --bundle_dir option. Note that the bundle_dir directory must be writable.
+
+  Example:
+  >$ python cros_bundle --board x86-alex --recovery 0.15.918.0/dev/mp
+     --board2 x86-alex-he --recovery2 0.15.918.0/dev/mp
+     --factory 0.15.918.0/dev --fsi --chromeos_root $CHROMEOS_ROOT
+     --no_upload -f --bundle_dir=/usr/local/.../my_new_bundle
+  # Bundle tar file my_new_bundle.tar.bz2 will be produced in default WORKDIR
+  # Bundle files will be stored for reference in /usr/local/.../my_new_bundle
+  # All other temporary files will remain in default WORKDIR
+
+Alternate tar file destination
+
+  To specify a non-default destinaiton directory for the factory bundle tar
+  file use the --tar_dir option. Note the tar_dir directory must be writable.
+
+  Example:
+  >$ python cros_bundle --board x86-alex --recovery 0.15.918.0/dev/mp
+     --board2 x86-alex-he --recovery2 0.15.918.0/dev/mp
+     --factory 0.15.918.0/dev --fsi --chromeos_root $CHROMEOS_ROOT
+     --no_upload -f --tar_dir=/tmp
+  # Bundle tar file factory_bundle_yyyy_mm_dd.tar.bz2 will be produced in /tmp
+  # Bundle files will be stored for reference in default WORKDIR
+  # All other temporary files will remain in default WORKDIR
+
+Known Limitations
+
+  Currently only supports Alex factory bundles.
+  Does not support download from GSD.
+  Does not support using local images unless valid md5 file is present and
+    image name can be fully resolved from chromeos-images webserver. This
+    limitation applies to all bundle files.
+  Functional testing assumes a default value of Chrome OS source tree root.
+
+Common Errors and Exceptions
+
+  1.NameResolutionError when an exact image url cannot be resolved, it is
+    possible that the image is no longer posted on the chromeos-images
+    webserver. It is also possible that minor naming variations in index
+    pages derived from said images page have made some resources fail to be
+    resolved.
+
+  An example:
+    Name resolution failed on:
+    Recovery image exact URL could not be determined given input:
+    http://chromeos-images/chromeos-official/beta-channel/x86-alex/0.13.587.116
+    chromeos_0.13.587.116_x86-alex_recovery_beta-channel_mp.*[.]bin$
+    ...
+    Script exiting due to:
+    Failed to determine URL at which to fetch images, please check the logged
+    URLs attempted.
+
+  Diagnosis:
+    Go to http://chromeos-images/ and search for release 0.13.587.116,
+      examine URL for recovery image under “Bin” column
+    If the URL starts with “https://sandbox.google.com/storage/...”,
+      that means the image has been archived in GSD.
+    If the URL starts with “http://chromeos-images/...”, navigate to the index
+      page for that particular build, e.g. if the image URL is
+    http://chromeos-images/dev-channel/x86-alex-rc/0.15.916.0/chromeos_0.15.91
+      6.0_x86-alex_recovery_dev-channel_mp-v3.bin
+    then the corresponding index page can be found @
+    http://chromeos-images/dev-channel/x86-alex-rc/0.15.916.0/
+
+    Once on the index page, ensure that links for all required bundle inputs
+    are present.
+
+  Cause:
+    The script does NOT currently support fetching images from GSD.
+    [We’re hoping to leverage CPFE to avert this breakage in the future.]
+
+  Fix:
+    Contact factory build and release team (scottz, djmm) asking that each
+    bundle component missing be brought out of archive storage - check all
+    links for necessary bundle components before running script again.
+
+  2.Script not run from <ChromeOS_root>/src/scripts
+
+  An example:
+    Script exiting due to:
+    ConvertRecoveryToSsd must be run from src/scripts.
+
+  Fix:
+    >$ cd $CHROMEOS_ROOT/src/scripts
+    Then repeat bundling command.
+
+  3.Intended to request fsi bundle but requested non-fsi factory bundle
+
+  An example:
+    Script exiting due to:
+    Must specify install shim for non-fsi bundle.
+
+  Fix:
+    Append --fsi to bundling command, retry.
