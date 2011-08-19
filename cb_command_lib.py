@@ -442,7 +442,7 @@ def RecoveryToStandardSsd(image_name, options):
   """Converts a recovery image into an SSD image.
 
   Assumes a chroot setup.
-  Requires sudo privileges to run enter_chroot.
+  Requires sudo privileges to run cros_sdk.
   Requires the script to run in <ChromeOS_root>/src/scripts.
 
   Args:
@@ -481,7 +481,7 @@ def RecoveryToStandardSsd(image_name, options):
   ssd_chroot_name = ssd_name.replace(image_dir, chroot_work_dir)
   shutil.copy(image_name, ssd_chroot_name)
   cmd = (['cros_sdk',
-          '--enter',
+          '--',
           os.path.join(IMG_SIGN_DIR, 'convert_recovery_to_ssd.sh'),
           ssd_name.replace(image_dir,
                            ReinterpretPathForChroot(chroot_work_dir))])
