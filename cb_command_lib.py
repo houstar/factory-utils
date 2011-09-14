@@ -5,18 +5,16 @@
 
 """This module contains methods interfacing with pre-existing tools."""
 
-import cb_archive_hashing_lib
 import cb_constants
-import cb_name_lib
-import cb_url_lib
 import logging
 import re
 import os
 import shutil
-import subprocess
 
-from cb_constants import BundlingError
-from cb_name_lib import ResolveRecoveryUrl
+from cb_archive_hashing_lib import CheckMd5, ZipExtract
+from cb_name_lib import ResolveRecoveryUrl, RunWithNamingRetries
+from cb_url_lib import DetermineUrl, Download
+from cb_util import RunCommand
 
 USER = os.environ['USER']
 HOME_DIR = '/home/%s/trunk/src' % USER
@@ -30,59 +28,6 @@ FIRMWARE_MAP = {
     'ec2': {'name': cb_constants.EC2_NAME, 'pattern': 'Extra file:.*(Alex.*)'},
     'bios': {'name': cb_constants.BIOS_NAME, 'pattern': 'BIOS image:.*(Alex.*)'}
     }
-
-
-class CommandResult(object):
-  """An object to store various attributes of a child process.
-
-  Borrowed from <chromeos_root>/chromite/lib/cros_build_lib.py
-  """
-  def __init__(self):
-    self.cmd = None
-    self.error = None
-    self.output = None
-    self.returncode = None
-
-
-def RunCommand(cmd, redirect_stdout=False, redirect_stderr=False, cwd=None):
-  """Runs a command using subprocess module Popen.
-
-  Blocks until command returns.
-  Modeled on RunCommand from <chromeos_root>/chromite/lib/cros_build_lib.py
-
-  Args:
-    cmd: a list of arguments to Popen
-    redirect_stdout: a boolean, True when subprocess output should be returned
-    redirect_stderr: a boolean, True when subprocess errors should be returned
-    cwd: working directory in which to run command
-  Returns:
-    a CommandResult object.
-  Raises:
-    BundlingError when running command fails.
-  """
-  # Set default
-  stdout = None
-  stderr = None
-  cmd_result = CommandResult()
-  cmd_result.cmd = cmd
-
-  # Modify defaults based on parameters
-  if redirect_stdout:
-    stdout = subprocess.PIPE
-  if redirect_stderr:
-    stderr = subprocess.PIPE
-
-  # log command run
-  logging.info('Running command: ' + ' '.join(cmd))
-
-  try:
-    proc = subprocess.Popen(cmd, cwd=cwd, stdout=stdout, stderr=stderr)
-  except OSError as (errno, strerror):
-    raise BundlingError('\n'.join(['OSError [%d] : %s' % (errno, strerror),
-                                   'OSError running cmd %s' % ' '.join(cmd)]))
-  (cmd_result.output, cmd_result.error) = proc.communicate()
-  cmd_result.returncode = proc.returncode
-  return cmd_result
 
 
 def IsInsideChroot():
@@ -160,7 +105,7 @@ def UploadToGsd(filename):
     BundlingError when file specified by filename does not exist
   """
   if not (filename and os.path.exists(filename)):
-    raise BundlingError('File %s does not exist.' % filename)
+    raise cb_constants.BundlingError('File %s does not exist.' % filename)
   RunCommand(['gsutil', 'cp', filename, cb_constants.GSD_BUCKET])
 
 
@@ -218,12 +163,13 @@ def ListFirmware(image_name, cros_fw):
     BundlingError when necessary files missing.
   """
   if not os.path.exists(cros_fw):
-    raise BundlingError('Necessary file chromeos-firmwareupdate missing '
-                        'from %s.' % image_name)
+    raise cb_constants.BundlingError(
+        'Necessary file chromeos-firmwareupdate missing from %s.' % image_name)
   cmd_result = RunCommand([cros_fw, '-V'], redirect_stdout=True)
   output_string = cmd_result.output
   if not output_string:
-    raise BundlingError('Failed to get output from script %s.' % cros_fw)
+    raise cb_constants.BundlingError(
+        'Failed to get output from script %s.' % cros_fw)
   lines = output_string.split('\n')
   searches = [re.search('[.]/(.*)', line) for line in lines]
   fw_files = [match.group(1) for match in searches if match]
@@ -277,8 +223,8 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     BundlingError when necessary tools are missing or SSD mounting fails.
   """
   if not CheckEnvironment(image_name, firmware_dest, mount_point):
-    raise BundlingError('Environment check failed, please fix conditions '
-                        'listed above.')
+    raise cb_constants.BundlingError(
+        'Environment check failed, please fix conditions listed above.')
   image = image_name.split(os.sep)[-1]
   try:
     # mount SSD image at mount_point
@@ -287,14 +233,14 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
                 '--from=' + cb_constants.WORKDIR, '--image=' + image,
                 '--rootfs_mountpt=' + mount_point])
     if not os.path.exists(mount_point) or not os.listdir(mount_point):
-      raise BundlingError('Failed to mount SSD image at mount point %s' %
-                          mount_point)
+      raise cb_constants.BundlingError(
+          'Failed to mount SSD image at mount point %s' % mount_point)
     cros_fw = os.path.join(mount_point, 'usr', 'sbin',
                            'chromeos-firmwareupdate')
     (ec_name, ec2_name, bios_name) = ListFirmware(image_name, cros_fw)
     firmdir = ExtractFiles(cros_fw)
     if not firmdir:
-      raise BundlingError('Failed to extract firmware files.')
+      raise cb_constants.BundlingError('Failed to extract firmware files.')
     shutil.copy(os.path.join(firmdir, cb_constants.EC_NAME),
                 os.path.join(firmware_dest, ec_name))
     shutil.copy(os.path.join(firmdir, cb_constants.EC2_NAME),
@@ -306,8 +252,9 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
     RunCommand(['./mount_gpt_image.sh', '--unmount'])
   filename = os.path.join(cb_constants.WORKDIR, image_name)
   md5filename = filename + '.md5'
-  if not cb_archive_hashing_lib.CheckMd5(filename, md5filename):
-    raise BundlingError('SSD image MD5 check failed, image was corrupted!')
+  if not CheckMd5(filename, md5filename):
+    raise cb_constants.BundlingError(
+        'SSD image MD5 check failed, image was corrupted!')
 
 
 def HandleGitExists(force):
@@ -329,7 +276,8 @@ def HandleGitExists(force):
         shutil.rmtree(cb_constants.GITDIR)
         os.mkdir(cb_constants.GITDIR)
       else:
-        raise BundlingError('Vboot git repo exists, use -f to update')
+        raise cb_constants.BundlingError(
+            'Vboot git repo exists, use -f to update')
   else:
     os.mkdir(cb_constants.GITDIR)
 
@@ -347,8 +295,8 @@ def HandleSsdExists(ssd_name, force):
     if not force:
       msg = 'SSD file %s already exists, please confirm overwrite' % ssd_name
       if not AskUserConfirmation(msg):
-        raise BundlingError('File %s already exists, use -f to overwrite' %
-                            ssd_name)
+        raise cb_constants.BundlingError(
+            'File %s already exists, use -f to overwrite' % ssd_name)
 
 
 def MoveCgpt(cgpt_file, dest_file):
@@ -374,16 +322,15 @@ def InstallCgpt(index_page, force):
     BundlingError when resource fetch and extract fails or overwrite is denied
   """
   au_gen_url = os.path.join(index_page, cb_constants.AU_GEN)
-  if not cb_url_lib.Download(au_gen_url):
-    raise BundlingError('Necessary resource %s could not be fetched.' %
-                        au_gen_url)
+  if not Download(au_gen_url):
+    raise cb_constants.BundlingError(
+        'Necessary resource %s could not be fetched.' % au_gen_url)
   au_gen_name = os.path.join(cb_constants.WORKDIR, cb_constants.AU_GEN)
   cgpt_name = os.path.join(cb_constants.WORKDIR, 'cgpt')
-  if not cb_archive_hashing_lib.ZipExtract(au_gen_name,
-                                           'cgpt',
-                                           path=cb_constants.WORKDIR):
-    raise BundlingError('Could not extract necesary resource %s from %s.' %
-                        (cgpt_name, au_gen_name))
+  if not ZipExtract(au_gen_name, 'cgpt', path=cb_constants.WORKDIR):
+    raise cb_constants.BundlingError(
+        'Could not extract necesary resource %s from %s.' %
+        (cgpt_name, au_gen_name))
   cgpt_dest = os.path.join(cb_constants.SUDO_DIR, 'cgpt')
   if os.path.exists(cgpt_dest):
     if force:
@@ -393,9 +340,9 @@ def InstallCgpt(index_page, force):
       if AskUserConfirmation(msg):
         MoveCgpt(cgpt_name, cgpt_dest)
       else:
-        raise BundlingError('Necessary utility cgpt already exists at %s, use '
-                            '-f to overwrite with newest version.' %
-                            cgpt_dest)
+        raise cb_constants.BundlingError(
+            'Necessary utility cgpt already exists at %s, use -f to overwrite '
+            'with newest version.' % cgpt_dest)
   else:
     MoveCgpt(cgpt_name, cgpt_dest)
 
@@ -443,25 +390,25 @@ def RecoveryToFullSsdNoChroot(image_name, options):
   HandleGitExists(force)
   RunCommand(['git', 'clone', cb_constants.GITURL, cb_constants.GITDIR])
   # fetch zip containing chromiumos_base_image
-  (rec_url, index_page) = cb_name_lib.RunWithNamingRetries(None,
-                                                           ResolveRecoveryUrl,
-                                                           image_name,
-                                                           board,
-                                                           recovery)
+  (rec_url, index_page) = RunWithNamingRetries(
+      None, ResolveRecoveryUrl, board, recovery)
   if not index_page:
-    raise BundlingError('All naming schemes failed attempting to resolve '
-                        'recovery URL for recovery version %s' % recovery)
+    raise cb_constants.BundlingError(
+        'All naming schemes failed attempting to resolve recovery URL '
+        'for recovery version %s' % recovery)
   if not rec_url:
-    raise BundlingError('Could not find URL match for recovery version %s on '
-                        'page %s' % (recovery, index_page))
+    raise cb_constants.BundlingError(
+        'Could not find URL match for recovery version %s on page %s' %
+        (recovery, index_page))
   rec_no = recovery.split('/')[0]
   zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
-  zip_url = cb_url_lib.DetermineUrl(index_page, zip_pat)
+  zip_url = DetermineUrl(index_page, zip_pat)
   if not zip_url:
-    raise BundlingError('Failed to determine name of zip file for pattern %s '
-                        'on page %s' % (zip_pat, index_page))
-  if not cb_url_lib.Download(zip_url):
-    raise BundlingError('Failed to download %s.' % zip_url)
+    raise cb_constants.BundlingError(
+        'Failed to determine name of zip file for pattern %s on page %s' %
+        (zip_pat, index_page))
+  if not Download(zip_url):
+    raise cb_constants.BundlingError('Failed to download %s.' % zip_url)
   zip_name = os.path.join(cb_constants.WORKDIR, os.path.basename(zip_url))
   InstallCgpt(index_page, force)
   script_name = os.path.join(cb_constants.GITDIR,
@@ -490,11 +437,10 @@ def RecoveryToStandardSsd(image_name, options):
     BundlingError when resources not found or conversion fails.
   """
   force = options.force
-  board = options.board
-  recovery = options.recovery
   chromeos_root = options.chromeos_root
   if not re.search('/src/scripts$', os.getcwd()):
-    raise BundlingError('ConvertRecoveryToSsd must be run from src/scripts.')
+    raise cb_constants.BundlingError(
+        'ConvertRecoveryToSsd must be run from src/scripts.')
   image_dir = os.path.dirname(image_name)
   ssd_name = image_name.replace('recovery', 'ssd')
   HandleSsdExists(ssd_name, force)
@@ -503,14 +449,16 @@ def RecoveryToStandardSsd(image_name, options):
     chroot_work_dir = os.path.join(CHROOT_ROOT, CHROOT_REL_DIR)
   else:
     if not (chromeos_root and os.path.isdir(chromeos_root)):
-      raise BundlingError('Provided ChromeOS source tree root %s does not '
-                          'exist or is not a directory' % chromeos_root)
+      raise cb_constants.BundlingError(
+          'Provided ChromeOS source tree root %s does not exist or '
+          'is not a directory' % chromeos_root)
     chroot_work_dir = os.path.join(chromeos_root, 'chroot', CHROOT_REL_DIR)
   # ensure we have a chroot to work in
   chroot_work_parent_dir = re.match('(.*/).*', chroot_work_dir).group(1)
   if not os.path.exists(chroot_work_parent_dir):
-    raise BundlingError('Chroot environment could not be inferred, '
-                        'failed to create link %s.' % chroot_work_dir)
+    raise cb_constants.BundlingError(
+        'Chroot environment could not be inferred, failed to create link %s.' %
+        chroot_work_dir)
   if not(chroot_work_dir and os.path.isdir(chroot_work_dir)):
     os.mkdir(chroot_work_dir)
   ssd_chroot_name = ssd_name.replace(image_dir, chroot_work_dir)
@@ -568,7 +516,7 @@ def ReinterpretPathForChroot(path):
   # Strip the repository root from the path and strip first /.
   relative_path = path_abs_path.replace(root_abs_path, '')[1:]
   if relative_path == path_abs_path:
-    raise BundlingError('Error: '
+    raise cb_constants.BundlingError('Error: '
                         'path is outside your src tree, cannot reinterpret.')
   new_path = os.path.join('/home', os.getenv('USER'), 'trunk', relative_path)
   return new_path

@@ -5,6 +5,7 @@
 
 """This module contains methods for interacting with online resources."""
 
+import cb_constants
 import contextlib
 import formatter
 import logging
@@ -12,12 +13,9 @@ import os
 import re
 import urllib
 
-import cb_archive_hashing_lib
-import cb_constants
-
-from htmllib import HTMLParser
-
+from cb_archive_hashing_lib import CheckMd5
 from cb_constants import BundlingError
+from htmllib import HTMLParser
 
 
 class UrlLister(HTMLParser):
@@ -173,7 +171,7 @@ def CheckResourceExistsWithMd5(filename, md5filename):
   """
   return (os.path.exists(filename) and
           os.path.exists(md5filename) and
-          cb_archive_hashing_lib.CheckMd5(filename, md5filename))
+          CheckMd5(filename, md5filename))
 
 
 def DownloadCheckMd5(url, path, desc):
@@ -201,7 +199,7 @@ def DownloadCheckMd5(url, path, desc):
       raise BundlingError(desc + ' could not be fetched.')
     if not Download(url + '.md5'):
       raise BundlingError(desc + ' MD5 could not be fetched.')
-    if not cb_archive_hashing_lib.CheckMd5(name, name + '.md5'):
+    if not CheckMd5(name, name + '.md5'):
       raise BundlingError(desc + ' MD5 checksum does not match.')
     logging.debug('MD5 checksum match succeeded for %s', name)
   return name

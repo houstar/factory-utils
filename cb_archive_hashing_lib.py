@@ -5,11 +5,12 @@
 
 """This module contains hashing and compression methods."""
 
-import cb_command_lib
 import hashlib
 import logging
 import os
 import zipfile
+
+from cb_util import RunCommand
 
 
 def CheckMd5(filename, md5filename):
@@ -127,8 +128,7 @@ def MakeTar(target_dir, destination_dir, name=None):
     logging.error('Tar destination directory %s not writable.',
                   destination_dir)
     return None
-  cmd_result = cb_command_lib.RunCommand(['which', 'pbzip2'],
-                                         redirect_stdout=True)
+  cmd_result = RunCommand(['which', 'pbzip2'], redirect_stdout=True)
   output_string = cmd_result.output
   if not output_string:
     logging.error('\nMissing pbzip2. Please run sudo apt-get install pbzip2\n')
@@ -139,7 +139,6 @@ def MakeTar(target_dir, destination_dir, name=None):
   # use pbzip2 for speed
   name = os.path.join(destination_dir, name)
   parent_dir = target_dir[0:target_dir.rfind(os.sep)]
-  cb_command_lib.RunCommand(['tar', '-c', '-I', 'pbzip2', folder_name,
-                             '-f', name],
-                            cwd=parent_dir)
+  RunCommand(['tar', '-c', '-I', 'pbzip2', folder_name, '-f', name],
+             cwd=parent_dir)
   return name

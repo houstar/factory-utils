@@ -7,7 +7,6 @@
 
 import cb_archive_hashing_lib
 import cb_command_lib
-import cb_constants
 import cb_name_lib
 import cb_url_lib
 import logging
@@ -15,9 +14,7 @@ import os
 import re
 import shutil
 
-from cb_command_lib import AskUserConfirmation
-from cb_constants import BundlingError
-from cb_url_lib import DetermineThenDownloadCheckMd5
+from cb_constants import BundlingError, WORKDIR
 
 
 def CheckBundleInputs(image_names, options):
@@ -154,15 +151,14 @@ def MakeFactoryBundle(image_names, options):
     if not os.access(bundle_dir, os.W_OK):
       raise BundlingError('Provided directory %s not writable.' % bundle_dir)
   else:
-    bundle_dir = os.path.join(cb_constants.WORKDIR,
-                              cb_name_lib.GetBundleDefaultName(
-                                version=version))
+    bundle_dir = os.path.join(
+        WORKDIR, cb_name_lib.GetBundleDefaultName(version=version))
   if os.path.exists(bundle_dir):
     if del_ok:
       shutil.rmtree(bundle_dir)
     else:
       msg = 'Bundle directory %s already exists. Ok to overwrite?' % bundle_dir
-      ans = AskUserConfirmation(msg)
+      ans = cb_command_lib.AskUserConfirmation(msg)
       if ans:
         shutil.rmtree(bundle_dir)
       else:
@@ -182,11 +178,11 @@ def MakeFactoryBundle(image_names, options):
     if not os.path.isdir(tar_dir):
       # input given but bad
       logging.warning('Provided directory %s does not exist, using %s',
-                      tar_dir, cb_constants.WORKDIR)
-      tar_dir = cb_constants.WORKDIR
+                      tar_dir, WORKDIR)
+      tar_dir = WORKDIR
   else:
     # make default have cleaner output
-    tar_dir = cb_constants.WORKDIR
+    tar_dir = WORKDIR
   if firmware:
     firmware_dest = os.path.join(bundle_dir, 'firmware')
     if os.path.exists(firmware_dest):
@@ -195,7 +191,7 @@ def MakeFactoryBundle(image_names, options):
       else:
         msg = ('Bundle directory %s already exists. Ok to overwrite?' %
                firmware_dest)
-      ans = AskUserConfirmation(msg)
+      ans = cb_command_lib.AskUserConfirmation(msg)
       if ans:
         shutil.rmtree(firmware_dest)
       else:
@@ -222,8 +218,7 @@ def MakeFactoryBundle(image_names, options):
   tarname = cb_archive_hashing_lib.MakeTar(bundle_dir, tar_dir)
   if not tarname:
     raise BundlingError('Failed to create tar file of bundle directory.')
-  logging.info('Completed creating factory bundle tar file in %s.',
-               cb_constants.WORKDIR)
+  logging.info('Completed creating factory bundle tar file in %s.', WORKDIR)
   abstarname = os.path.join(tar_dir, tarname)
   return abstarname
 
@@ -301,10 +296,8 @@ def FetchImages(options, alt_naming=0):
   rec_url, rec_pat = cb_name_lib.GetRecoveryName(board, recovery, alt_naming)
   # Release
   if release:
-    rel_name = cb_url_lib.DetermineThenDownloadCheckMd5(rel_url,
-                                             rel_pat,
-                                             cb_constants.WORKDIR,
-                                             'Release image')
+    rel_name = cb_url_lib.DetermineThenDownloadCheckMd5(
+        rel_url, rel_pat, WORKDIR, 'Release image')
   # Optional Extra Release
   if release2:
     rel_url2, rel_pat2 = cb_name_lib.GetReleaseName(board2,
@@ -312,15 +305,13 @@ def FetchImages(options, alt_naming=0):
                                                     alt_naming)
     rel_name2 = DetermineThenDownloadCheckMd5(rel_url2,
                                               rel_pat2,
-                                              cb_constants.WORKDIR,
+                                              WORKDIR,
                                               'Second release image')
   else:
     rel_name2 = None
   # Recovery
-  rec_name = cb_url_lib.DetermineThenDownloadCheckMd5(rec_url,
-                                           rec_pat,
-                                           cb_constants.WORKDIR,
-                                           'Recovery image')
+  rec_name = cb_url_lib.DetermineThenDownloadCheckMd5(
+      rec_url, rec_pat, WORKDIR, 'Recovery image')
   # if needed, run recovery to ssd conversion now that we have recovery image
   if not release:
     rel_name = cb_command_lib.ConvertRecoveryToSsd(rec_name,
@@ -335,7 +326,7 @@ def FetchImages(options, alt_naming=0):
                                                      alt_naming)
     rec_name2 = DetermineThenDownloadCheckMd5(rec_url2,
                                               rec_pat2,
-                                              cb_constants.WORKDIR,
+                                              WORKDIR,
                                               'Second recovery image')
   else:
     rec_name2 = None
@@ -350,7 +341,7 @@ def FetchImages(options, alt_naming=0):
     if not fac_det_url:
       raise BundlingError('Factory image exact URL could not be determined '
                           'on page %s given pattern %s.' % (fac_url, fac_pat))
-    fac_name = os.path.join(cb_constants.WORKDIR, fac_det_url.split('/')[-1])
+    fac_name = os.path.join(WORKDIR, fac_det_url.split('/')[-1])
     if os.path.exists(fac_name):
       logging.info('Resource %s already exists, skipping fetch.',
                    fac_name)
@@ -359,7 +350,7 @@ def FetchImages(options, alt_naming=0):
       if not cb_url_lib.Download(fac_det_url):
         raise BundlingError('Factory image could not be fetched.')
     factorybin = os.path.join('factory_test', 'chromiumos_factory_image.bin')
-    absfactorybin = os.path.join(cb_constants.WORKDIR, factorybin)
+    absfactorybin = os.path.join(WORKDIR, factorybin)
     if os.path.exists(absfactorybin):
       logging.info('Resource %s already present, skipping zip extraction.',
                    absfactorybin)
@@ -367,7 +358,7 @@ def FetchImages(options, alt_naming=0):
       logging.info('Extracting factory image binary')
       if not cb_archive_hashing_lib.ZipExtract(fac_name,
                                                factorybin,
-                                               path=cb_constants.WORKDIR):
+                                               path=WORKDIR):
         raise BundlingError('Could not find chromiumos_factory_image.bin '
                             'in factory image.')
     # Factory Install Shim
@@ -378,7 +369,7 @@ def FetchImages(options, alt_naming=0):
     # has a name that suggests it would be on another channel index page
     shim_name = DetermineThenDownloadCheckMd5(rec_url,
                                               shim_pat,
-                                              cb_constants.WORKDIR,
+                                              WORKDIR,
                                               'Factory Install Shim')
   if not fsi:
     image_names = dict(ssd=rel_name,
@@ -412,6 +403,6 @@ def CheckParseOptions(options, parser):
   if options.force:
     logging.info('Detected --force option, obtaining sudo privilege now.')
     logging.info('Remove --force option to list and confirm each command.')
-    cb_command_lib.RunCommand(['sudo', '-v'])
+    cb_util.RunCommand(['sudo', '-v'])
   if not options.fsi and not options.shim:
     raise BundlingError('\nMust specify install shim for non-fsi bundle.')

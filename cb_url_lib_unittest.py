@@ -13,7 +13,6 @@ import unittest
 import urllib
 import tempfile
 
-import cb_archive_hashing_lib
 import cb_constants
 import cb_url_lib
 
@@ -210,10 +209,10 @@ class TestCheckResourceExistsWithMd5(mox.MoxTestBase):
 
   def testFileExistsMd5FileExistsMd5ChecksOut(self):
     """Verify return value when all is well."""
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_url_lib, 'CheckMd5')
     os.path.exists('file').AndReturn(True)
     os.path.exists('file.md5').AndReturn(True)
-    cb_archive_hashing_lib.CheckMd5('file', 'file.md5').AndReturn(True)
+    cb_url_lib.CheckMd5('file', 'file.md5').AndReturn(True)
     self.mox.ReplayAll()
     self.assertTrue(cb_url_lib.CheckResourceExistsWithMd5(self.filename,
                                                           self.md5filename))
@@ -235,10 +234,10 @@ class TestCheckResourceExistsWithMd5(mox.MoxTestBase):
 
   def testMd5DoesNotChecksOut(self):
     """Verify return value when MD5 checksum is bad."""
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_url_lib, 'CheckMd5')
     os.path.exists('file').AndReturn(True)
     os.path.exists('file.md5').AndReturn(True)
-    cb_archive_hashing_lib.CheckMd5('file', 'file.md5').AndReturn(False)
+    cb_url_lib.CheckMd5('file', 'file.md5').AndReturn(False)
     self.mox.ReplayAll()
     self.assertFalse(cb_url_lib.CheckResourceExistsWithMd5(self.filename,
                                                            self.md5filename))
@@ -269,12 +268,12 @@ class TestDownloadCheckMd5(mox.MoxTestBase):
   def testDownloadsCheckMd5Succeed(self):
     """Test behavior when fetch is entirely successful."""
     self.mox.StubOutWithMock(cb_url_lib, 'Download')
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_url_lib, 'CheckMd5')
     cb_url_lib.CheckResourceExistsWithMd5(self.name,
                                           self.md5name).AndReturn(False)
     cb_url_lib.Download(self.url).AndReturn(True)
     cb_url_lib.Download(self.md5url).AndReturn(True)
-    cb_archive_hashing_lib.CheckMd5(self.name, self.md5name).AndReturn(True)
+    cb_url_lib.CheckMd5(self.name, self.md5name).AndReturn(True)
     self.mox.ReplayAll()
     expected = self.name
     actual = cb_url_lib.DownloadCheckMd5(self.url, self.path, self.desc)
@@ -310,12 +309,12 @@ class TestDownloadCheckMd5(mox.MoxTestBase):
   def testMd5CheckFails(self):
     """Test behavior when MD5 check fails."""
     self.mox.StubOutWithMock(cb_url_lib, 'Download')
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_url_lib, 'CheckMd5')
     cb_url_lib.CheckResourceExistsWithMd5(self.name,
                                           self.md5name).AndReturn(False)
     cb_url_lib.Download(self.url).AndReturn(True)
     cb_url_lib.Download(self.md5url).AndReturn(True)
-    cb_archive_hashing_lib.CheckMd5(self.name, self.md5name).AndReturn(False)
+    cb_url_lib.CheckMd5(self.name, self.md5name).AndReturn(False)
     self.mox.ReplayAll()
     self.assertRaises(cb_constants.BundlingError,
                       cb_url_lib.DownloadCheckMd5,

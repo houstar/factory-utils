@@ -9,11 +9,8 @@ import datetime
 import logging
 import os
 
-import cb_constants
-import cb_url_lib
-
-from cb_constants import BundlingError
-from cb_url_lib import NameResolutionError
+from cb_constants import BundlingError, PREFIX
+from cb_url_lib import DetermineUrl, NameResolutionError
 
 NUM_NAMING_SCHEMES = 3
 DATE_FORMAT = '%Y_%m_%d'
@@ -53,12 +50,11 @@ def GetNameComponents(board, version_string, alt_naming):
   num, cha, key = version_string.split('/')
   cha = cha + '-channel'
   if alt_naming == 1:
-    url = os.path.join(cb_constants.PREFIX, cha, board + '-rc', num)
+    url = os.path.join(PREFIX, cha, board + '-rc', num)
   elif alt_naming == 2:
-    url = os.path.join(cb_constants.PREFIX.replace('chromeos-official', ''),
-                       cha, board, num)
+    url = os.path.join(PREFIX.replace('chromeos-official', ''), cha, board, num)
   else:
-    url = os.path.join(cb_constants.PREFIX, cha, board, num)
+    url = os.path.join(PREFIX, cha, board, num)
   return (url, num, cha, key)
 
 
@@ -101,15 +97,12 @@ def GetFactoryName(board, factory, alt_naming=0):
   fac_no, fac_ch = factory.split('/')
   fac_ch = fac_ch + '-channel'
   if alt_naming == 1:
-    fac_url = os.path.join(cb_constants.PREFIX, fac_ch, board + '-rc', fac_no)
+    fac_url = os.path.join(PREFIX, fac_ch, board + '-rc', fac_no)
   elif alt_naming == 2:
-    fac_url = os.path.join(cb_constants.PREFIX.replace(
-                           'chromeos-official', ''),
-                           fac_ch,
-                           board,
-                           fac_no)
+    fac_url = os.path.join(PREFIX.replace('chromeos-official', ''),
+                           fac_ch, board, fac_no)
   else:
-    fac_url = os.path.join(cb_constants.PREFIX, fac_ch, board, fac_no)
+    fac_url = os.path.join(PREFIX, fac_ch, board, fac_no)
   fac_pat = ''.join(['ChromeOS-factory-', fac_no, '.*', board, '[.]zip$'])
   return (fac_url, fac_pat)
 
@@ -158,11 +151,10 @@ def GetRecoveryName(board, recovery, alt_naming=0):
   return (rec_url, rec_pat)
 
 
-def ResolveRecoveryUrl(image_name, board, recovery, alt_naming=0):
+def ResolveRecoveryUrl(board, recovery, alt_naming=0):
   """Resolve URL for a recovery image.
 
   Args:
-    image_name: absolute path name of recovery image to convert
     board: board name of recovery image to convert
     recovery: a string containing recovery image version/channel/signing_key
     alt_naming: optional try alternative build naming
@@ -177,7 +169,7 @@ def ResolveRecoveryUrl(image_name, board, recovery, alt_naming=0):
     NameResolutionError on failure
   """
   (index_page, rec_pat) = GetRecoveryName(board, recovery, alt_naming)
-  rec_url = cb_url_lib.DetermineUrl(index_page, rec_pat)
+  rec_url = DetermineUrl(index_page, rec_pat)
   # TODO(benwin) common logic with DetermineThenDownloadCheckMd5, refactor?
   if not rec_url:
     raise NameResolutionError('Recovery image exact URL could not be '

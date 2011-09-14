@@ -5,25 +5,16 @@
 
 """Unit tests for the cb_command_lib module."""
 
+import cb_command_lib
+import cb_constants
 import logging
 import mox
-import re
 import os
 import shutil
-import subprocess
 import tempfile
 import unittest
 
-import cb_archive_hashing_lib
-import cb_command_lib
-import cb_constants
-import cb_name_lib
-import cb_url_lib
-
-from mox import IsA
-
-from cb_constants import BundlingError
-from cb_url_lib import NameResolutionError
+from cb_util import CommandResult
 
 
 def _CleanUp(obj):
@@ -47,11 +38,11 @@ def _AssertFirmwareError(obj):
   """
   obj.mox.StubOutWithMock(os.path, 'exists')
   obj.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
-  os.path.exists(IsA(str)).AndReturn(True)
-  cb_command_lib.RunCommand(IsA(list),
+  os.path.exists(mox.IsA(str)).AndReturn(True)
+  cb_command_lib.RunCommand(mox.IsA(list),
                             redirect_stdout=True).AndReturn(obj.mock_cres)
   obj.mox.ReplayAll()
-  obj.assertRaises(BundlingError,
+  obj.assertRaises(cb_constants.BundlingError,
                    cb_command_lib.ListFirmware,
                    obj.image_name,
                    obj.cros_fw)
@@ -60,7 +51,7 @@ def _AssertFirmwareError(obj):
 def _AssertInstallCgptError(obj):
   """Common logic to assert an error while installing cgpt utility."""
   obj.mox.ReplayAll()
-  obj.assertRaises(BundlingError,
+  obj.assertRaises(cb_constants.BundlingError,
                    cb_command_lib.InstallCgpt,
                    obj.index_page,
                    obj.force)
@@ -73,12 +64,11 @@ def _AssertConvertRecoveryError(obj):
     obj: an instance of mox.MoxTestBase pertaining to ConvertRecoveryToSsd
   """
   obj.mox.ReplayAll()
-  obj.assertRaises(BundlingError,
+
+  obj.assertRaises(cb_constants.BundlingError,
                    cb_command_lib.ConvertRecoveryToSsd,
                    obj.image_name,
-                   obj.board,
-                   obj.recovery,
-                   obj.force)
+                   obj)
 
 
 # RunCommand tested in <chromeos_root>/chromite/lib/cros_build_lib_unittest.py
@@ -96,7 +86,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     self.mount_point = self.firmware_dest
     self.mox.StubOutWithMock(os, 'getcwd')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
-    self.mock_cres = cb_command_lib.CommandResult()
+    self.mock_cres = CommandResult()
     self.mock_cres.output = 'uudecode present'
     # do not need to clean up empty temporary file
     self.clean_dirs = [self.firmware_dest]
@@ -107,7 +97,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
   def testEnvironmentIsGood(self):
     """Verify return value when environment is all good."""
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertTrue(cb_command_lib.CheckEnvironment(self.image_name,
@@ -117,7 +107,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
   def testNotInScriptsDirectory(self):
     """Verify return value when script not run from <cros_root/src/scripts."""
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts/lib')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -128,7 +118,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when uudecode not present."""
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
     self.mock_cres.output = ''
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -139,7 +129,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when given ssd image file not present."""
     self.image_name = ''
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -150,7 +140,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when given ssd image has bad name."""
     self.image = tempfile.NamedTemporaryFile(suffix='recovery.bin')
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -161,7 +151,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when environment is all good."""
     self.firmware_dest = ''
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -172,7 +162,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when firmware destination directory not writable."""
     self.mox.StubOutWithMock(os, 'access')
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     os.access(self.firmware_dest, os.W_OK).AndReturn(False)
     self.mox.ReplayAll()
@@ -184,7 +174,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when mount point not given or does not exist."""
     self.mount_point = ''
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     self.assertFalse(cb_command_lib.CheckEnvironment(self.image_name,
@@ -195,7 +185,7 @@ class TestCheckEnvironment(mox.MoxTestBase):
     """Verify return value when provided mount point is not empty."""
     self.mox.StubOutWithMock(os, 'listdir')
     os.getcwd().AndReturn('/home/$USER/chromiumos/src/scripts')
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     os.listdir(self.mount_point).AndReturn(['there_is_a_file'])
     self.mox.ReplayAll()
@@ -212,23 +202,25 @@ class TestUploadToGsd(mox.MoxTestBase):
     filename = 'fakefilename'
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
     cb_command_lib.UploadToGsd(filename)
 
   def testNoFileGiven(self):
     """Verify error raised when no file given to upload."""
     filename = ''
-    self.assertRaises(BundlingError, cb_command_lib.UploadToGsd, filename)
+    self.assertRaises(cb_constants.BundlingError,
+                      cb_command_lib.UploadToGsd, filename)
 
   def testFileDoesNotExist(self):
     """Verify error raised when file given to upload does not exist."""
     filename = 'fakefilename'
     self.mox.StubOutWithMock(os.path, 'exists')
-    os.path.exists(IsA(str)).AndReturn(False)
+    os.path.exists(mox.IsA(str)).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError, cb_command_lib.UploadToGsd, filename)
+    self.assertRaises(cb_constants.BundlingError,
+                      cb_command_lib.UploadToGsd, filename)
 
 
 class TestListFirmware(mox.MoxTestBase):
@@ -238,7 +230,7 @@ class TestListFirmware(mox.MoxTestBase):
     self.mox = mox.Mox()
     self.image_name = 'ssd_name_here.bin'
     self.cros_fw = 'chromeos-firmwareupdate'
-    self.mock_cres = cb_command_lib.CommandResult()
+    self.mock_cres = CommandResult()
 
   def testListFirmwareSuccess(self):
     """Verify return value when all goes well."""
@@ -251,8 +243,8 @@ class TestListFirmware(mox.MoxTestBase):
     self.mock_cres.output = fake_output
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list),
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     expected = (ec_new_name, bios_new_name)
@@ -262,7 +254,7 @@ class TestListFirmware(mox.MoxTestBase):
   def testCrosFwDoesNotExist(self):
     """Verify error when provided script name is bad."""
     self.cros_fw = ''
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ListFirmware,
                       self.image_name,
                       self.cros_fw)
@@ -290,8 +282,8 @@ class TestListFirmware(mox.MoxTestBase):
                                        './' + cb_constants.BIOS_NAME])
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list),
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     expected = (cb_constants.EC_NAME, cb_constants.BIOS_NAME)
@@ -306,7 +298,7 @@ class TestExtractFiles(mox.MoxTestBase):
     self.mox = mox.Mox()
     self.cros_fw = '/path/to/chromeos-firmwareupdate'
     self.fw_dir = '/tmp/tmp.ABCD'
-    self.mock_cres = cb_command_lib.CommandResult()
+    self.mock_cres = CommandResult()
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
 
@@ -314,7 +306,7 @@ class TestExtractFiles(mox.MoxTestBase):
     """Verify return value when all goes well."""
     self.mock_cres.output = 'Files extracted to ' + self.fw_dir
     os.path.exists(self.cros_fw).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     os.path.exists(self.fw_dir).AndReturn(True)
     self.mox.ReplayAll()
@@ -336,7 +328,7 @@ class TestExtractFiles(mox.MoxTestBase):
     self.fw_dir = ''
     self.mock_cres.output = 'Not listing tmp results directory'
     os.path.exists(self.cros_fw).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
     expected = None
@@ -347,7 +339,7 @@ class TestExtractFiles(mox.MoxTestBase):
     """Verify return value when extractor fails."""
     self.mock_cres.output = 'Lying that files were extracted to ' + self.fw_dir
     os.path.exists(self.cros_fw).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list),
+    cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     os.path.exists(self.fw_dir).AndReturn(False)
     self.mox.ReplayAll()
@@ -371,7 +363,7 @@ class TestExtractFirmware(mox.MoxTestBase):
     self.mox.StubOutWithMock(cb_command_lib, 'ListFirmware')
     self.mox.StubOutWithMock(cb_command_lib, 'ExtractFiles')
     self.mox.StubOutWithMock(shutil, 'copy')
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'CheckMd5')
+    self.mox.StubOutWithMock(cb_command_lib, 'CheckMd5')
 
 
   def testExtractFirmwareSuccess(self):
@@ -379,17 +371,17 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.CheckEnvironment(self.image_name,
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('ec_name',
-                                                               'bios_name'))
-    cb_command_lib.ExtractFiles(IsA(str)).AndReturn('/tmp/firmware_dir')
-    shutil.copy(IsA(str), IsA(str))
-    shutil.copy(IsA(str), IsA(str))
-    shutil.copy(IsA(str), IsA(str))
-    cb_command_lib.RunCommand(IsA(list))
-    cb_archive_hashing_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(True)
+    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
+        ('ec_name', 'bios_name'))
+    cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    cb_command_lib.RunCommand(mox.IsA(list))
+    cb_command_lib.CheckMd5(mox.IsA(str), mox.IsA(str)).AndReturn(True)
     self.mox.ReplayAll()
     cb_command_lib.ExtractFirmware(self.image_name,
                                    self.firmware_dest,
@@ -401,7 +393,7 @@ class TestExtractFirmware(mox.MoxTestBase):
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
@@ -412,11 +404,11 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.CheckEnvironment(self.image_name,
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(False)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
@@ -427,12 +419,12 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.CheckEnvironment(self.image_name,
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn([])
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
@@ -443,15 +435,15 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.CheckEnvironment(self.image_name,
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('_ignore',
-                                                               '_ignore'))
-    cb_command_lib.ExtractFiles(IsA(str))
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
+        ('_ignore', '_ignore'))
+    cb_command_lib.ExtractFiles(mox.IsA(str))
+    cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
@@ -465,19 +457,19 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.CheckEnvironment(self.image_name,
                                     self.firmware_dest,
                                     self.mount_point).AndReturn(True)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(IsA(str), IsA(str)).AndReturn(('_ignore',
-                                                               '_ignore'))
-    cb_command_lib.ExtractFiles(IsA(str)).AndReturn('/tmp/firmware_dir')
-    shutil.copy(IsA(str), IsA(str))
-    shutil.copy(IsA(str), IsA(str))
-    shutil.copy(IsA(str), IsA(str))
-    cb_command_lib.RunCommand(IsA(list))
-    cb_archive_hashing_lib.CheckMd5(IsA(str), IsA(str)).AndReturn(False)
+    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
+        ('_ignore', '_ignore'))
+    cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    shutil.copy(mox.IsA(str), mox.IsA(str))
+    cb_command_lib.RunCommand(mox.IsA(list))
+    cb_command_lib.CheckMd5(mox.IsA(str), mox.IsA(str)).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
@@ -505,7 +497,7 @@ class TestHandleGitExists(mox.MoxTestBase):
   def testGitExistsNoForceUserConfirmsOverwrite(self):
     """Verify behavior when git files exist, user confirms overwrite."""
     os.path.exists(cb_constants.GITDIR).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(True)
     shutil.rmtree(cb_constants.GITDIR)
     os.mkdir(cb_constants.GITDIR)
     self.mox.ReplayAll()
@@ -514,9 +506,9 @@ class TestHandleGitExists(mox.MoxTestBase):
   def testGitExistsNoForceNoConfirm(self):
     """Verify error when git files exist, no overwrite confirmation."""
     os.path.exists(cb_constants.GITDIR).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.HandleGitExists,
                       self.force)
 
@@ -549,16 +541,16 @@ class TestHandleSsdExists(mox.MoxTestBase):
   def testSsdExistsNoForceUserConfirmsOverwrite(self):
     """Verify behavior when ssd image exists, user confirms overwrite."""
     os.path.exists(self.ssd_name).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(True)
     self.mox.ReplayAll()
     cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
 
   def testSsdExistsNoForceNoConfirm(self):
     """Verify error when ssd image exists, no overwrite confirmation."""
     os.path.exists(self.ssd_name).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(BundlingError,
+    self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.HandleSsdExists,
                       self.ssd_name,
                       self.force)
@@ -578,134 +570,74 @@ class TestInstallCgpt(mox.MoxTestBase):
     self.mox = mox.Mox()
     self.index_page = 'index_page'
     self.force = False
-    self.mox.StubOutWithMock(cb_url_lib, 'Download')
-    self.mox.StubOutWithMock(cb_archive_hashing_lib, 'ZipExtract')
+    self.mox.StubOutWithMock(cb_command_lib, 'Download')
+    self.mox.StubOutWithMock(cb_command_lib, 'ZipExtract')
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'AskUserConfirmation')
     self.mox.StubOutWithMock(cb_command_lib, 'MoveCgpt')
 
   def testAuGenDownloadFails(self):
     """Verify error when download of au-generator zip fails."""
-    cb_url_lib.Download(IsA(str)).AndReturn(False)
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(False)
     _AssertInstallCgptError(self)
 
   def testExtractCgptFails(self):
     """Verify error when cgpt is not extracted from au-generator zip."""
-    cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_archive_hashing_lib.ZipExtract(
-      IsA(str),
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.ZipExtract(
+      mox.IsA(str),
       'cgpt',
       path=cb_constants.WORKDIR).AndReturn(False)
     _AssertInstallCgptError(self)
 
   def testCgptExistsNoForceNoConfirm(self):
     """Verify error when cgpt already exists at desired location."""
-    cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_archive_hashing_lib.ZipExtract(
-      IsA(str),
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.ZipExtract(
+      mox.IsA(str),
       'cgpt',
       path=cb_constants.WORKDIR).AndReturn(True)
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(False)
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(False)
     _AssertInstallCgptError(self)
 
   def testCgptExistsNoForceUserConfirmsOverwrite(self):
     """Verify behavior when cgpt already exists and user confirms overwrite."""
-    cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_archive_hashing_lib.ZipExtract(
-      IsA(str),
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.ZipExtract(
+      mox.IsA(str),
       'cgpt',
       path=cb_constants.WORKDIR).AndReturn(True)
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.AskUserConfirmation(IsA(str)).AndReturn(True)
-    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.AskUserConfirmation(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.MoveCgpt(mox.IsA(str), mox.IsA(str))
     self.mox.ReplayAll()
     cb_command_lib.InstallCgpt(self.index_page, self.force)
 
   def testCgptExistsForceOverwrite(self):
     """Verify behavior when cgpt exists and script input allows overwrite."""
     self.force = True
-    cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_archive_hashing_lib.ZipExtract(
-      IsA(str),
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.ZipExtract(
+      mox.IsA(str),
       'cgpt',
       path=cb_constants.WORKDIR).AndReturn(True)
-    os.path.exists(IsA(str)).AndReturn(True)
-    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    os.path.exists(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.MoveCgpt(mox.IsA(str), mox.IsA(str))
     self.mox.ReplayAll()
     cb_command_lib.InstallCgpt(self.index_page, self.force)
 
   def testCgptDoesNotExist(self):
     """Verify behavior when cgpt can be installed fresh."""
-    cb_url_lib.Download(IsA(str)).AndReturn(True)
-    cb_archive_hashing_lib.ZipExtract(
-      IsA(str),
+    cb_command_lib.Download(mox.IsA(str)).AndReturn(True)
+    cb_command_lib.ZipExtract(
+      mox.IsA(str),
       'cgpt',
       path=cb_constants.WORKDIR).AndReturn(True)
-    os.path.exists(IsA(str)).AndReturn(False)
-    cb_command_lib.MoveCgpt(IsA(str), IsA(str))
+    os.path.exists(mox.IsA(str)).AndReturn(False)
+    cb_command_lib.MoveCgpt(mox.IsA(str), mox.IsA(str))
     self.mox.ReplayAll()
     cb_command_lib.InstallCgpt(self.index_page, self.force)
-
-
-class TestResolveRecoveryUrl(mox.MoxTestBase):
-  """Unit tests related to ResolveRecoveryUrl."""
-
-  def setUp(self):
-    self.mox = mox.Mox()
-    self.image_name = '/abs/path/to/image_name'
-    self.board = 'board-name'
-    self.recovery = 'rec_no/rec_channel/rec_key'
-    self.index_page = 'index_page'
-    self.rec_pat = 'recovery_image_name_pattern'
-    self.rec_url = 'recovery_image_url'
-    self.mox.StubOutWithMock(cb_name_lib, 'GetRecoveryName')
-    self.mox.StubOutWithMock(cb_url_lib, 'DetermineUrl')
-
-  def testDefaultNamingSucceeds(self):
-    """Verify return value when default naming resolution works."""
-    cb_name_lib.GetRecoveryName(self.board,
-                                self.recovery).AndReturn((self.index_page,
-                                                          self.rec_pat))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            self.rec_pat).AndReturn(self.rec_url)
-    self.mox.ReplayAll()
-    expected = (self.rec_url, self.index_page)
-    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
-                                               self.board,
-                                               self.recovery)
-    self.assertEqual(expected, actual)
-
-  def testAlternativeNamingSucceeds(self):
-    """Verify return value when alternative naming resolution works."""
-    cb_name_lib.GetRecoveryName(
-      self.board, self.recovery).AndRaise(NameResolutionError(''))
-    cb_name_lib.GetRecoveryName(self.board,
-                                self.recovery,
-                                alt_naming=True).AndReturn((self.index_page,
-                                                            self.rec_pat))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            self.rec_pat).AndReturn(self.rec_url)
-    self.mox.ReplayAll()
-    expected = (self.rec_url, self.index_page)
-    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
-                                               self.board,
-                                               self.recovery)
-    self.assertEqual(expected, actual)
-
-  def testNamingResolutionFails(self):
-    """Verify return value when naming resolution fails both times."""
-    cb_name_lib.GetRecoveryName(
-      self.board, self.recovery).AndRaise(NameResolutionError(''))
-    cb_name_lib.GetRecoveryName(
-      self.board, self.recovery, alt_naming=True).AndRaise(
-        NameResolutionError(''))
-    self.mox.ReplayAll()
-    expected = (None, None)
-    actual = cb_command_lib.ResolveRecoveryUrl(self.image_name,
-                                               self.board,
-                                               self.recovery)
-    self.assertEqual(expected, actual)
 
 
 class TestConvertRecoveryToSsd(mox.MoxTestBase):
@@ -718,6 +650,8 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
     self.board = 'board-name'
     self.recovery = 'rec_no/rec_channel/rec_key'
     self.force = False
+    self.full_ssd = True
+    self.chromeos_root = '/tmp/cros/src/scripts'
     self.index_page = 'index_page'
     self.rec_pat = 'recovery_image_name_pattern'
     self.rec_url = 'recovery_image_url'
@@ -725,95 +659,88 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
     self.mox.StubOutWithMock(cb_command_lib, 'HandleGitExists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
     self.mox.StubOutWithMock(cb_command_lib, 'ResolveRecoveryUrl')
-    self.mox.StubOutWithMock(cb_url_lib, 'DetermineUrl')
-    self.mox.StubOutWithMock(cb_url_lib, 'Download')
+    self.mox.StubOutWithMock(cb_command_lib, 'DetermineUrl')
+    self.mox.StubOutWithMock(cb_command_lib, 'Download')
     self.mox.StubOutWithMock(cb_command_lib, 'HandleSsdExists')
     self.mox.StubOutWithMock(cb_command_lib, 'InstallCgpt')
 
   def testConvertRecoveryToSsdSuccess(self):
-    """Verify return value when recovery to ssd conversion succeeds."""
+    """Verify return value when recovery to full ssd conversion succeeds."""
     cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.ResolveRecoveryUrl(
-      self.image_name, self.board, self.recovery).AndReturn(
-        (self.rec_url, self.index_page))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            IsA(str)).AndReturn(self.zip_url)
-    cb_url_lib.Download(self.zip_url).AndReturn(True)
+        self.board, self.recovery, alt_naming=0).AndReturn(
+            (self.rec_url, self.index_page))
+    cb_command_lib.DetermineUrl(self.index_page,
+                            mox.IsA(str)).AndReturn(self.zip_url)
+    cb_command_lib.Download(self.zip_url).AndReturn(True)
     cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
     cb_command_lib.InstallCgpt(self.index_page, self.force)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
-    actual = cb_command_lib.ConvertRecoveryToSsd(self.image_name,
-                                                 self.board,
-                                                 self.recovery,
-                                                 self.force)
+    actual = cb_command_lib.ConvertRecoveryToSsd(self.image_name, self)
     self.assertEqual(self.ssd_name, actual)
 
   def testGitExistsNotHandled(self):
     """Verify error when git files exist, user does not confirm overwrite."""
-    cb_command_lib.HandleGitExists(self.force).AndRaise(BundlingError(''))
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
+    cb_command_lib.HandleGitExists(self.force).AndRaise(
+        cb_constants.BundlingError(''))
     _AssertConvertRecoveryError(self)
 
   def testRecoveryNameNotResolved(self):
     """Verify error when recovery image url cannot be determined."""
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
     cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
-    cb_command_lib.ResolveRecoveryUrl(self.image_name,
-                                      self.board,
-                                      self.recovery).AndReturn((None, None))
+    cb_command_lib.RunCommand(mox.IsA(list))
+    cb_command_lib.ResolveRecoveryUrl(
+        self.board, self.recovery, alt_naming=0).AndReturn(
+            (None, None))
     _AssertConvertRecoveryError(self)
 
   def testCannotDetermineBaseImageZipUrl(self):
-    """Verify error when anme of zip with base image cannot be determined."""
+    """Verify error when name of zip with base image cannot be determined."""
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
     cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.ResolveRecoveryUrl(
-      self.image_name, self.board, self.recovery).AndReturn(
-        (self.rec_url, self.index_page))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            IsA(str)).AndReturn(None)
+        self.board, self.recovery, alt_naming=0).AndReturn(
+            (self.rec_url, self.index_page))
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(None)
     _AssertConvertRecoveryError(self)
 
   def testBaseImageZipDownloadFails(self):
     """Verify error when zip containing base image is not downloaded."""
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
     cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.ResolveRecoveryUrl(
-      self.image_name, self.board, self.recovery).AndReturn(
-        (self.rec_url, self.index_page))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            IsA(str)).AndReturn(self.zip_url)
-    cb_url_lib.Download(self.zip_url).AndReturn(False)
+        self.board, self.recovery, alt_naming=0).AndReturn(
+            (self.rec_url, self.index_page))
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(
+        self.zip_url)
+    cb_command_lib.Download(self.zip_url).AndReturn(False)
     _AssertConvertRecoveryError(self)
 
   def testSsdImageExistsNoConfirm(self):
     """Verify error when SSD image exists, user does not confirm overwrite."""
-    cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
-    cb_command_lib.ResolveRecoveryUrl(
-      self.image_name, self.board, self.recovery).AndReturn(
-        (self.rec_url, self.index_page))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            IsA(str)).AndReturn(self.zip_url)
-    cb_url_lib.Download(self.zip_url).AndReturn(True)
-    cb_command_lib.HandleSsdExists(self.ssd_name,
-                                   self.force).AndRaise(BundlingError(''))
+    cb_command_lib.HandleSsdExists(self.ssd_name, self.force).AndRaise(
+        cb_constants.BundlingError(''))
     _AssertConvertRecoveryError(self)
 
   def testInstallCgptFails(self):
     """Verify error when installing cgpt utility fails."""
     cb_command_lib.HandleGitExists(self.force)
-    cb_command_lib.RunCommand(IsA(list))
+    cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.ResolveRecoveryUrl(
-      self.image_name, self.board, self.recovery).AndReturn(
-        (self.rec_url, self.index_page))
-    cb_url_lib.DetermineUrl(self.index_page,
-                            IsA(str)).AndReturn(self.zip_url)
-    cb_url_lib.Download(self.zip_url).AndReturn(True)
+        self.board, self.recovery, alt_naming=0).AndReturn(
+            (self.rec_url, self.index_page))
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(
+        self.zip_url)
+    cb_command_lib.Download(self.zip_url).AndReturn(True)
     cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
-    cb_command_lib.InstallCgpt(self.index_page,
-                               self.force).AndRaise(BundlingError(''))
+    cb_command_lib.InstallCgpt(self.index_page, self.force).AndRaise(
+        cb_constants.BundlingError(''))
     _AssertConvertRecoveryError(self)
 
 
