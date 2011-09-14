@@ -24,6 +24,13 @@ IMG_SIGN_DIR = HOME_DIR + '/platform/vboot_reference/scripts/image_signing'
 CHROOT_ROOT = '/home/%s/chromiumos/chroot' % USER
 CHROOT_REL_DIR = 'tmp/bundle_tmp'
 
+# Mapping of firmware internal name to regular expression patterns.
+FIRMWARE_MAP = {
+    'ec': {'name': cb_constants.EC_NAME, 'pattern': 'EC image:.*(Alex.*)'},
+    'ec2': {'name': cb_constants.EC2_NAME, 'pattern': 'Extra file:.*(Alex.*)'},
+    'bios': {'name': cb_constants.BIOS_NAME, 'pattern': 'BIOS image:.*(Alex.*)'}
+    }
+
 
 class CommandResult(object):
   """An object to store various attributes of a child process.
@@ -157,8 +164,48 @@ def UploadToGsd(filename):
   RunCommand(['gsutil', 'cp', filename, cb_constants.GSD_BUCKET])
 
 
+def _ExtractFirmwareFilename(fw_type, lines):
+  """Parses chromeos-firmwareupdate output for proper firmware file name.
+
+  Background:
+   - factory ssd image comes with a binary executable named
+     'chromeos-firmwareupdate'
+   - this command can display firmware info on the actual hardware
+   - when we run this command to extract EC firmware, one of the EC firmware
+     files is 'ec.bin'
+   - in a factory bundle, it's desired to use an alternative naming for this
+     file
+
+  Sample output of chromeos-firmwareupdate command (truncated):
+    EC image:     4d02c93315c880efdfc50ef12b281c9e \
+    */build/x86-alex_he/tmp/portage/chromeos-base/<SNIP>/Alex_EC_XHA002M.bin
+    4d02c93315c880efdfc50ef12b281c9e *./ec.bin
+
+  In this example, we want to name 'ec.bin' as 'Alex_EC_XHA002M.bin' in the
+  output bundle.
+
+  Args:
+    fw_type: a string, type of firmware. Valid values are keys in FIRMWARE_MAP.
+    lines: a list of strings, output of 'chromeos-firmwareupdate -V'.
+
+  Returns:
+    rename: a string, external firmware filename, e.g. Alex_EC_XHA002M.bin.
+  """
+  rename = FIRMWARE_MAP[fw_type]['name']
+  fw_pat = re.compile(FIRMWARE_MAP[fw_type]['pattern'])
+  fw_searches = [fw_pat.search(line) for line in lines]
+  fw_matches = [match.group(1) for match in fw_searches if match]
+  if fw_matches:
+    if rename != fw_matches[0]:
+      rename = fw_matches[0]
+  else:
+    #TODO(tgao): ask factory team if this should be an error condition
+    logging.warning('Proper renaming of firmware %s failed.', rename)
+  return rename
+
+
 def ListFirmware(image_name, cros_fw):
-  """Get list of strings representing contents of firmware.
+  """Gets list of strings representing contents of firmware.
 
   Only handles Alex firmware at present.
 
@@ -166,7 +213,7 @@ def ListFirmware(image_name, cros_fw):
     image_name: absolute file path to SSD release image binary
     cros_fw: absolute path of firmware extraction script
   Returns:
-    a tuple of strings (ec_name, bios_name)
+    a tuple of strings (ec_name, ec2_name, bios_name)
   Raises:
     BundlingError when necessary files missing.
   """
@@ -179,29 +226,15 @@ def ListFirmware(image_name, cros_fw):
     raise BundlingError('Failed to get output from script %s.' % cros_fw)
   lines = output_string.split('\n')
   searches = [re.search('[.]/(.*)', line) for line in lines]
-  firmfiles = [match.group(1) for match in searches if match]
-  if cb_constants.EC_NAME not in firmfiles:
-    raise BundlingError('Necessary file ec.bin missing from %s.' % cros_fw)
+  fw_files = [match.group(1) for match in searches if match]
+  for f in [FIRMWARE_MAP[k]['name'] for k in FIRMWARE_MAP.keys()]:
+    if f not in fw_files:
+      raise BundlingError('Necessary file %s missing from %s.' % (f, cros_fw))
+
   # TODO(benwin) add additional branching for h2c binary
-  if cb_constants.BIOS_NAME not in firmfiles:
-    raise BundlingError('Necessary file bios.bin missing from %s.' % cros_fw)
-  ec_name = cb_constants.EC_NAME
-  ec_pat = re.compile('EC image:.*(Alex.*)')
-  ec_searches = [ec_pat.search(line) for line in lines]
-  ec_matches = [match.group(1) for match in ec_searches if match]
-  if ec_matches:
-    ec_name = ec_matches[0]
-  else:
-    logging.warning('Proper renaming of ec.bin firmware failed.')
-  bios_name = cb_constants.BIOS_NAME
-  bios_pat = re.compile('BIOS image:.*(Alex.*)')
-  bios_searches = [bios_pat.search(line) for line in lines]
-  bios_matches = [match.group(1) for match in bios_searches if match]
-  if bios_matches:
-    bios_name = bios_matches[0]
-  else:
-    logging.warning('Proper renaming of bios.bin firmware failed.')
-  return (ec_name, bios_name)
+  return (_ExtractFirmwareFilename('ec', lines),
+          _ExtractFirmwareFilename('ec2', lines),
+          _ExtractFirmwareFilename('bios', lines))
 
 
 def ExtractFiles(cros_fw):
@@ -258,12 +291,14 @@ def ExtractFirmware(image_name, firmware_dest, mount_point):
                           mount_point)
     cros_fw = os.path.join(mount_point, 'usr', 'sbin',
                            'chromeos-firmwareupdate')
-    (ec_name, bios_name) = ListFirmware(image_name, cros_fw)
+    (ec_name, ec2_name, bios_name) = ListFirmware(image_name, cros_fw)
     firmdir = ExtractFiles(cros_fw)
     if not firmdir:
       raise BundlingError('Failed to extract firmware files.')
     shutil.copy(os.path.join(firmdir, cb_constants.EC_NAME),
                 os.path.join(firmware_dest, ec_name))
+    shutil.copy(os.path.join(firmdir, cb_constants.EC2_NAME),
+                os.path.join(firmware_dest, ec2_name))
     shutil.copy(os.path.join(firmdir, cb_constants.BIOS_NAME),
                 os.path.join(firmware_dest, bios_name))
     shutil.copy(cros_fw, firmware_dest)

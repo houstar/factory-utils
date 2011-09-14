@@ -127,8 +127,8 @@ def MakeTar(target_dir, destination_dir, name=None):
     logging.error('Tar destination directory %s not writable.',
                   destination_dir)
     return None
-  cmd_result = RunCommand(['which', 'pbzip2'],
-                          redirect_stdout=True)
+  cmd_result = cb_command_lib.RunCommand(['which', 'pbzip2'],
+                                         redirect_stdout=True)
   output_string = cmd_result.output
   if not output_string:
     logging.error('\nMissing pbzip2. Please run sudo apt-get install pbzip2\n')

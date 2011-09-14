@@ -11,6 +11,7 @@ import os
 WORKDIR = '/usr/local/google/cros_bundle/tmp'
 PREFIX = 'http://chromeos-images/chromeos-official'
 EC_NAME = 'ec.bin'
+EC2_NAME = 'Alex_EC_VFA616M.bin'
 BIOS_NAME = 'bios.bin'
 MOUNT_POINT = '/tmp/m'
 GITURL = 'http://git.chromium.org/chromiumos/platform/vboot_reference.git'
