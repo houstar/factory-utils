@@ -224,7 +224,10 @@ class TestUploadToGsd(mox.MoxTestBase):
 
 
 class TestListFirmware(mox.MoxTestBase):
-  """Unit tests related to ListFirmware."""
+  """Unit tests related to ListFirmware.
+
+  Implicitly tests _ExtractFirmwareFilename().
+  """
 
   def setUp(self):
     self.mox = mox.Mox()
@@ -238,7 +241,8 @@ class TestListFirmware(mox.MoxTestBase):
     bios_new_name = 'AlexABCD'
     fake_output = '\n'.join(['EC image: ' + ec_new_name,
                              'BIOS image: ' + bios_new_name,
-                             './' +  cb_constants.EC_NAME,
+                             './' + cb_constants.EC_NAME,
+                             './' + cb_constants.EC2_NAME,
                              './' + cb_constants.BIOS_NAME])
     self.mock_cres.output = fake_output
     self.mox.StubOutWithMock(os.path, 'exists')
@@ -247,7 +251,7 @@ class TestListFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
-    expected = (ec_new_name, bios_new_name)
+    expected = (ec_new_name, cb_constants.EC2_NAME, bios_new_name)
     actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
     self.assertEqual(expected, actual)
 
@@ -278,7 +282,8 @@ class TestListFirmware(mox.MoxTestBase):
 
   def testRenamingFails(self):
     """Verify graceful behavior when specific naming info not provided."""
-    self.mock_cres.output = '\n'.join(['./' +  cb_constants.EC_NAME,
+    self.mock_cres.output = '\n'.join(['./' + cb_constants.EC_NAME,
+                                       './' + cb_constants.EC2_NAME,
                                        './' + cb_constants.BIOS_NAME])
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
@@ -286,7 +291,8 @@ class TestListFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
-    expected = (cb_constants.EC_NAME, cb_constants.BIOS_NAME)
+    expected = (cb_constants.EC_NAME, cb_constants.EC2_NAME,
+                cb_constants.BIOS_NAME)
     actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
     self.assertEqual(expected, actual)
 
@@ -365,7 +371,6 @@ class TestExtractFirmware(mox.MoxTestBase):
     self.mox.StubOutWithMock(shutil, 'copy')
     self.mox.StubOutWithMock(cb_command_lib, 'CheckMd5')
 
-
   def testExtractFirmwareSuccess(self):
     """Verify behavior of quiet success when all goes well."""
     cb_command_lib.CheckEnvironment(self.image_name,
@@ -375,8 +380,9 @@ class TestExtractFirmware(mox.MoxTestBase):
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
     cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('ec_name', 'bios_name'))
+        ('ec_name', 'ec2_name', 'bios_name'))
     cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
@@ -439,7 +445,7 @@ class TestExtractFirmware(mox.MoxTestBase):
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
     cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('_ignore', '_ignore'))
+        ('_ignore', '_ignore', '_ignore'))
     cb_command_lib.ExtractFiles(mox.IsA(str))
     cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
@@ -461,8 +467,9 @@ class TestExtractFirmware(mox.MoxTestBase):
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
     cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('_ignore', '_ignore'))
+        ('_ignore', '_ignore', '_ignore'))
     cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
+    shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))

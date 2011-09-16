@@ -57,8 +57,6 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
     mount_point: dir to mount SSD image, defaults to cb_constants._MOUNT_POINT
   Returns:
     a boolean, True when the conditions checked are all satisfied
-  Raises:
-    BundlingError when running a command fails
   """
   # TODO(benwin) refactor so this check comes at the beginning of the script
   res = True
@@ -175,7 +173,8 @@ def ListFirmware(image_name, cros_fw):
   fw_files = [match.group(1) for match in searches if match]
   for f in [FIRMWARE_MAP[k]['name'] for k in FIRMWARE_MAP.keys()]:
     if f not in fw_files:
-      raise BundlingError('Necessary file %s missing from %s.' % (f, cros_fw))
+      raise cb_constants.BundlingError('Necessary file %s missing from %s.' %
+                                       (f, cros_fw))
 
   # TODO(benwin) add additional branching for h2c binary
   return (_ExtractFirmwareFilename('ec', lines),
@@ -305,8 +304,6 @@ def MoveCgpt(cgpt_file, dest_file):
   Args:
     cgpt_file: absolute path to cgpt file
     dest_file: absolute pathname of file destination
-  Raises:
-    BundlingError when a command fails
   """
   RunCommand(['sudo', 'cp', cgpt_file, dest_file])
   RunCommand(['sudo', 'chmod', '760', dest_file])
@@ -358,8 +355,6 @@ def ConvertRecoveryToSsd(image_name, options):
       please see cros_bundle_lib/CheckBundleInputs for possibilities
   Returns:
     a string, the absolute path name of the extracted SSD image
-  Raises:
-    BundlingError when resources not found or conversion fails.
   """
   if options.full_ssd:
     # TODO(benwin) convert recovery image to full ssd image inside chroot
