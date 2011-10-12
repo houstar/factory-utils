@@ -5,7 +5,6 @@
 
 """This module contains methods for interacting with online resources."""
 
-import cb_constants
 import contextlib
 import formatter
 import logging
@@ -14,7 +13,9 @@ import re
 import urllib
 
 from cb_archive_hashing_lib import CheckMd5
-from cb_constants import BundlingError
+from cb_constants import BundlingError, IMAGE_GSD_BUCKET, IMAGE_GSD_PREFIX, \
+    WORKDIR
+from cb_util import RunCommand
 from htmllib import HTMLParser
 
 
@@ -61,6 +62,28 @@ class NameResolutionError(Exception):
     logging.debug('Name resolution failed on:\n' + reason + '\n')
 
 
+def _ConvertHttpToGsUrl(url):
+  """Converts an http:// URL to the equivalent of gs:// URL.
+
+  There are two ways of accessing files stored on GSD:
+  1. via HTTP(S), using standard web browser. The URL looks like
+    https://sandbox.google.com/storage/<BUCKET>/<CHANNEL>/<BOARD>/<RELEASE>/\
+        <FILE>
+  2. via GsUtil tool, a Python CLI. The URL looks like
+    gs://<BUCKET>/<CHANNEL>/<BOARD>/<RELEASE>/<FILE>
+    (See http://code.google.com/apis/storage/docs/gsutil.html for details)
+
+  GsUtil supports path prefix matching ending with a wildcard '*'.
+
+  Args:
+    url: a string, HTTP(S) URL.
+  Returns:
+   a string, URL accessible through GsUtil tool e.g. gs://<blah>.
+  """
+  gs_url = url.replace(IMAGE_GSD_PREFIX, IMAGE_GSD_BUCKET)
+  return gs_url + '/*'
+
+
 def DetermineUrl(url, pattern):
   """Return an exact URL linked from a page given a pattern to match.
 
@@ -74,21 +97,34 @@ def DetermineUrl(url, pattern):
   Returns:
     a string, an exact URL, or None if URL not present or link not found
   """
+  logging.debug('DetermineUrl(): HTTP url = %r', url)
   try:
-    usock = urllib.urlopen(url)
+    if url.startswith(IMAGE_GSD_PREFIX):
+      http_url = url
+      url = _ConvertHttpToGsUrl(http_url)
+      logging.debug('DetermineUrl(): gs URL = %r', url)
+      result = RunCommand(['gsutil', 'ls', url], redirect_stdout=True,
+                          redirect_stderr=True)
+      if result.returncode:
+        msg = ('Error fetching index page for %s: stdout = %r, stderr = %r' %
+               (http_url, result.output, result.error))
+        logging.error(msg)
+      else:
+        return MatchUrl(result.output.split('\n'), pattern)
+    else:
+      usock = urllib.urlopen(url)
+      htmlformatter = formatter.NullFormatter()
+      parser = UrlLister(htmlformatter)
+      parser.feed(usock.read())
+      usock.close()
+      parser.close()
+      link = MatchUrl(parser.urls, pattern)
+      if link:
+        return os.path.join(url, link)
   except IOError:
     logging.warning('Could not open %s.', url)
-    return None
-  htmlformatter = formatter.NullFormatter()
-  parser = UrlLister(htmlformatter)
-  parser.feed(usock.read())
-  usock.close()
-  parser.close()
-  link = MatchUrl(parser.urls, pattern)
-  if not link:
-    return None
-  else:
-    return os.path.join(url, link)
+
+  return None
 
 
 def MatchUrl(url_list, pattern):
@@ -129,15 +165,26 @@ def Download(url):
   Returns:
     a boolean, True only when file is fully downloaded
   """
+  local_file_name = os.path.join(WORKDIR, url.split('/')[-1])
   try:
-    with contextlib.closing(urllib.urlopen(url)) as web_file:
-      local_file_name = os.path.join(cb_constants.WORKDIR, url.split('/')[-1])
-      with open(local_file_name, 'w') as local_file:
-        local_file.write(web_file.read())
+    if url.startswith(IMAGE_GSD_BUCKET):
+      result = RunCommand(['gsutil', 'cp', url, local_file_name],
+                          redirect_stdout=True, redirect_stderr=True)
+      if not result.returncode:
         return True
+
+      msg = ('Error fetching image %s: stdout = %r, stderr = %r' %
+             (url, result.output, result.error))
+      logging.error(msg)
+    else:
+      with contextlib.closing(urllib.urlopen(url)) as web_file:
+        with open(local_file_name, 'w') as local_file:
+          local_file.write(web_file.read())
+          return True
   except IOError:
     logging.warning('Could not open %s or writing local file failed.', url)
-    return False
+
+  return False
 
 
 def DetermineThenDownloadCheckMd5(url, pattern, path, desc):

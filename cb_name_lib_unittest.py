@@ -9,7 +9,7 @@ import mox
 import sys
 import unittest
 
-from cb_constants import PREFIX
+from cb_constants import IMAGE_GSD_PREFIX, IMAGE_SERVER_PREFIX
 import cb_name_lib
 
 
@@ -22,25 +22,31 @@ class TestGetNameComponents(unittest.TestCase):
 
   def testUseDefaultNaming(self):
     """Verify correct string tuple returned using default naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex/0.12.433.269',
-                '0.12.433.269',
-                'stable-channel',
-                'mp')
-    actual = cb_name_lib.GetNameComponents(self.board,
-                                           self.version_string,
-                                           0)
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+                '0.12.433.269', 'stable-channel', 'mp')
+    actual = cb_name_lib.GetNameComponents(self.board, self.version_string, 0)
     self.assertEqual(expected, actual)
 
-  def testUseAltNaming(self):
-    """Verify correct string tuple returned using alternative naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex-rc/' +
-                '0.12.433.269',
-                '0.12.433.269',
-                'stable-channel',
-                'mp')
-    actual = cb_name_lib.GetNameComponents(self.board,
-                                           self.version_string,
-                                           1)
+  def testUseAltNamingOne(self):
+    """Verify correct string tuple returned using alt_naming scheme 1."""
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex-rc/' +
+                '0.12.433.269', '0.12.433.269', 'stable-channel', 'mp')
+    actual = cb_name_lib.GetNameComponents(self.board, self.version_string, 1)
+    self.assertEqual(expected, actual)
+
+  def testUseAltNamingTwo(self):
+    """Verify correct string tuple returned using alt_naming scheme 2."""
+    mod_prefix = '/'.join(IMAGE_SERVER_PREFIX.split('/')[:-1])
+    expected = (mod_prefix + '/stable-channel/x86-alex/0.12.433.269',
+                '0.12.433.269', 'stable-channel', 'mp')
+    actual = cb_name_lib.GetNameComponents(self.board, self.version_string, 2)
+    self.assertEqual(expected, actual)
+
+  def testUseAltNamingThree(self):
+    """Verify correct string tuple returned using alt_naming scheme 3."""
+    expected = (IMAGE_GSD_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+                '0.12.433.269', 'stable-channel', 'mp')
+    actual = cb_name_lib.GetNameComponents(self.board, self.version_string, 3)
     self.assertEqual(expected, actual)
 
 
@@ -53,7 +59,7 @@ class TestGetReleaseName(unittest.TestCase):
 
   def testReleaseUseDefaultNaming(self):
     """Verify correct string tuple returned using default naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
                 'chromeos_0.12.433.269_x86-alex_ssd_stable-channel_' +
                 'mp.*[.]bin$')
     actual = cb_name_lib.GetReleaseName(self.board,
@@ -63,7 +69,7 @@ class TestGetReleaseName(unittest.TestCase):
 
   def testReleaseUseAlternativeNaming(self):
     """Verify correct string tuple returned using alternative naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex-rc/' +
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex-rc/' +
                 '0.12.433.269',
                 'chromeos_0.12.433.269_x86-alex_ssd_stable-channel_' +
                 'mp.*[.]bin$')
@@ -82,21 +88,32 @@ class TestGetFactoryName(unittest.TestCase):
 
   def testFactoryUseDefaultNaming(self):
     """Verify correct string tuple returned using default naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
                 'ChromeOS-factory-0.12.433.269.*x86-alex[.]zip$')
-    actual = cb_name_lib.GetFactoryName(self.board,
-                                        self.version_string,
-                                        0)
+    actual = cb_name_lib.GetFactoryName(self.board, self.version_string, 0)
     self.assertEqual(expected, actual)
 
-  def testFactoryUseAlternativeNaming(self):
-    """Verify correct string tuple returned using alternative naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex-rc/' +
+  def testFactoryUseAlternativeNamingOne(self):
+    """Verify correct string tuple returned using alt_naming scheme 1."""
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex-rc/' +
                 '0.12.433.269',
                 'ChromeOS-factory-0.12.433.269.*x86-alex[.]zip$')
-    actual = cb_name_lib.GetFactoryName(self.board,
-                                        self.version_string,
-                                        1)
+    actual = cb_name_lib.GetFactoryName(self.board, self.version_string, 1)
+    self.assertEqual(expected, actual)
+
+  def testFactoryUseAlternativeNamingTwo(self):
+    """Verify correct string tuple returned using alt_naming scheme 2."""
+    mod_prefix = '/'.join(IMAGE_SERVER_PREFIX.split('/')[:-1])
+    expected = (mod_prefix + '/stable-channel/x86-alex/0.12.433.269',
+                'ChromeOS-factory-0.12.433.269.*x86-alex[.]zip$')
+    actual = cb_name_lib.GetFactoryName(self.board, self.version_string, 2)
+    self.assertEqual(expected, actual)
+
+  def testFactoryUseAlternativeNamingThree(self):
+    """Verify correct string tuple returned using alt_naming scheme 3."""
+    expected = (IMAGE_GSD_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+                'ChromeOS-factory-0.12.433.269.*x86-alex[.]zip$')
+    actual = cb_name_lib.GetFactoryName(self.board, self.version_string, 3)
     self.assertEqual(expected, actual)
 
 
@@ -109,7 +126,7 @@ class TestGetRecoveryName(unittest.TestCase):
 
   def testRecoveryUseDefaultNaming(self):
     """Verify correct string tuple returned using default naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex/0.12.433.269',
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex/0.12.433.269',
                 'chromeos_0.12.433.269_x86-alex_recovery_stable-channel_' +
                 'mp.*[.]bin$')
     actual = cb_name_lib.GetRecoveryName(self.board,
@@ -119,7 +136,7 @@ class TestGetRecoveryName(unittest.TestCase):
 
   def testRecoveryUseAlternativeNaming(self):
     """Verify correct string tuple returned using alternative naming scheme."""
-    expected = (PREFIX + '/stable-channel/x86-alex-rc/' +
+    expected = (IMAGE_SERVER_PREFIX + '/stable-channel/x86-alex-rc/' +
                 '0.12.433.269',
                 'chromeos_0.12.433.269_x86-alex_recovery_stable-channel_' +
                 'mp.*[.]bin$')

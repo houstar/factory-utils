@@ -164,11 +164,12 @@ def ListFirmware(image_name, cros_fw):
     raise cb_constants.BundlingError(
         'Necessary file chromeos-firmwareupdate missing from %s.' % image_name)
   cmd_result = RunCommand([cros_fw, '-V'], redirect_stdout=True)
-  output_string = cmd_result.output
-  if not output_string:
+  output = cmd_result.output
+  if not output:
     raise cb_constants.BundlingError(
         'Failed to get output from script %s.' % cros_fw)
-  lines = output_string.split('\n')
+  logging.debug('ListFirmware(): chromeos-firmwareupdate output = %s', output)
+  lines = output.split('\n')
   searches = [re.search('[.]/(.*)', line) for line in lines]
   fw_files = [match.group(1) for match in searches if match]
   for f in [FIRMWARE_MAP[k]['name'] for k in FIRMWARE_MAP.keys()]:

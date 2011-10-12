@@ -8,18 +8,23 @@
 import logging
 import os
 
-WORKDIR = '/usr/local/google/cros_bundle/tmp'
-PREFIX = 'http://chromeos-images/chromeos-official'
+
+# Keep constants in ascending alphabetical order
+AU_GEN = 'au-generator.zip'
+BIOS_NAME = 'bios.bin'
 EC_NAME = 'ec.bin'
 EC2_NAME = 'Alex_EC_VFA616M.bin'
-BIOS_NAME = 'bios.bin'
-MOUNT_POINT = '/tmp/m'
 GITURL = 'http://git.chromium.org/chromiumos/platform/vboot_reference.git'
-GITDIR = os.path.join(WORKDIR, 'vboot_reference')
 # TODO(benwin) update to production value once it is determined
 GSD_BUCKET = 'gs://chromeos-download-test'
-AU_GEN = 'au-generator.zip'
+IMAGE_GSD_BUCKET = 'gs://chromeos-releases'
+IMAGE_GSD_PREFIX = 'https://sandbox.google.com/storage/chromeos-releases'
+IMAGE_SERVER_PREFIX = 'http://chromeos-images/chromeos-official'
+MOUNT_POINT = '/tmp/m'
 SUDO_DIR = '/usr/local/sbin'
+WORKDIR = '/usr/local/google/cros_bundle/tmp'
+# GITDIR should be defined after WORKDIR
+GITDIR = os.path.join(WORKDIR, 'vboot_reference')
 
 
 class BundlingError(Exception):

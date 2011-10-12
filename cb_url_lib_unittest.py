@@ -5,6 +5,7 @@
 
 """Unit tests for the cb_url_lib module."""
 
+import cb_url_lib
 import formatter
 import logging
 import mox
@@ -13,8 +14,8 @@ import unittest
 import urllib
 import tempfile
 
-import cb_constants
-import cb_url_lib
+from cb_constants import BundlingError, IMAGE_GSD_BUCKET, IMAGE_GSD_PREFIX
+from cb_util import CommandResult
 
 from mox import IsA
 
@@ -73,25 +74,76 @@ class TestDetermineUrl(mox.MoxTestBase):
   def setUp(self):
     self.mox = mox.Mox()
     self.mox.StubOutWithMock(urllib, 'urlopen')
+    self.mox.StubOutWithMock(cb_url_lib, 'RunCommand')
     self.url = 'test_url'
     self.pattern = 'ChromeOS-0.*'
+    self.http_url = IMAGE_GSD_PREFIX + '/test_url'
+    self.gsd_url = IMAGE_GSD_BUCKET + '/test_url/*'
+    self.gsd_pattern = 'chromeos_0.*[.]bin$'
 
-  def testUrlGood(self):
+  def testHttpUrlGood(self):
     """Verify URL returned when page opens properly."""
-    test_page = open('testdata/test_page_many_links.html', 'r')
-    urllib.urlopen('test_url').AndReturn(test_page)
-    self.mox.ReplayAll()
-    expected = 'test_url/ChromeOS-0.12.433.269-r72d7eaa2-b198-x86-alex.zip'
-    actual = cb_url_lib.DetermineUrl(self.url, self.pattern)
-    self.assertEqual(expected, actual)
+    with open('testdata/test_page_many_links.html', 'r') as test_page:
+      urllib.urlopen('test_url').AndReturn(test_page)
+      self.mox.ReplayAll()
+      expected = 'test_url/ChromeOS-0.12.433.269-r72d7eaa2-b198-x86-alex.zip'
+      actual = cb_url_lib.DetermineUrl(self.url, self.pattern)
+      self.assertEqual(expected, actual)
 
-  def testUrlBad(self):
-    """Verify URL returned when page fails to open properly."""
+  def testHttpUrlBad(self):
+    """Verify None returned when page fails to open properly."""
     urllib.urlopen('test_url').AndRaise(IOError)
     self.mox.ReplayAll()
-    expected = None
     actual = cb_url_lib.DetermineUrl(self.url, self.pattern)
+    self.assertEqual(None, actual)
+
+  def testHttpUrlNoMatch(self):
+    """Verify None returned when MatchUrl() returns None."""
+    with open('testdata/test_page_no_links.html', 'r') as test_page:
+      urllib.urlopen('test_url').AndReturn(test_page)
+      self.mox.ReplayAll()
+      actual = cb_url_lib.DetermineUrl(self.url, self.pattern)
+      self.assertEqual(None, actual)
+
+  def testGsdUrlGood(self):
+    """Verify GSD URL returned when page opens properly."""
+    with open('testdata/test_page_gsd_links.html', 'r') as test_page:
+      test_result = CommandResult()
+      test_result.output = test_page.read()
+      test_result.returncode = 0
+
+    cb_url_lib.RunCommand(['gsutil', 'ls', self.gsd_url], redirect_stdout=True,
+                          redirect_stderr=True).AndReturn(test_result)
+    self.mox.ReplayAll()
+    expected = (
+        'gs://chromeos-releases/stable-channel/x86-alex/0.12.433.269/'
+        'chromeos_0.12.433.269_x86-alex_recovery_stable-channel_mp-v3.bin')
+    actual = cb_url_lib.DetermineUrl(self.http_url, self.gsd_pattern)
     self.assertEqual(expected, actual)
+
+  def testGsdUrlRunCommandError(self):
+    """Verify None returned when RunCommand returns non-zero code."""
+    test_result = CommandResult()
+    test_result.returncode = -1
+
+    cb_url_lib.RunCommand(['gsutil', 'ls', self.gsd_url], redirect_stdout=True,
+                          redirect_stderr=True).AndReturn(test_result)
+    self.mox.ReplayAll()
+    actual = cb_url_lib.DetermineUrl(self.http_url, self.gsd_pattern)
+    self.assertEqual(None, actual)
+
+  def testGsdUrlNoMatch(self):
+    """Verify None returned when MatchUrl() returns None."""
+    with open('testdata/test_page_many_links.html', 'r') as test_page:
+      test_result = CommandResult()
+      test_result.output = test_page.read()
+      test_result.returncode = 0
+
+    cb_url_lib.RunCommand(['gsutil', 'ls', self.gsd_url], redirect_stdout=True,
+                          redirect_stderr=True).AndReturn(test_result)
+    self.mox.ReplayAll()
+    actual = cb_url_lib.DetermineUrl(self.http_url, self.gsd_pattern)
+    self.assertEqual(None, actual)
 
 
 class TestMatchUrl(unittest.TestCase):
@@ -103,9 +155,8 @@ class TestMatchUrl(unittest.TestCase):
   def testNoMatch(self):
     """Verify behavior when no match exists."""
     links = ['abd', 'acd', 'two']
-    expected = None
     actual = cb_url_lib.MatchUrl(links, self.pattern)
-    self.assertEqual(expected, actual)
+    self.assertEqual(None, actual)
 
   def testOneMatch(self):
     """Verify string returned upon a single good match."""
@@ -128,22 +179,26 @@ class TestDownload(mox.MoxTestBase):
   def setUp(self):
     self.mox = mox.Mox()
     self.mox.StubOutWithMock(urllib, 'urlopen')
+    self.mox.StubOutWithMock(cb_url_lib, 'RunCommand')
     self.url = 'test_url'
+    self.gsd_url = IMAGE_GSD_BUCKET + self.url
+    self.named_file = tempfile.NamedTemporaryFile()
+    self.test_file = tempfile.TemporaryFile()
+    self.test_file.write('Some sample content for testing.')
+    self.test_file.seek(0) # must rewind file handle for read
+    # Stub out os.path AFTER creating temp files
+    self.mox.StubOutWithMock(os.path, 'join')
 
   def testUrlGoodLocalFileOpenSucceeds(self):
     """Verify return value when page opens properly."""
-    test_file = tempfile.TemporaryFile()
-    test_file.write('Some sample content for testing.')
-    test_file.seek(0) # must rewind file handle for read
-    test_file2 = tempfile.NamedTemporaryFile()
-    self.mox.StubOutWithMock(os.path, 'join')
-    urllib.urlopen('test_url').AndReturn(test_file)
-    os.path.join(IsA(str), IsA(str)).AndReturn(test_file2.name)
+    os.path.join(IsA(str), IsA(str)).AndReturn(self.named_file.name)
+    urllib.urlopen('test_url').AndReturn(self.test_file)
     self.mox.ReplayAll()
     self.assertTrue(cb_url_lib.Download(self.url))
 
   def testUrlBad(self):
     """Verify clean return value when page does not open properly."""
+    os.path.join(IsA(str), IsA(str)).AndReturn('')
     urllib.urlopen('test_url').AndRaise(IOError)
     self.mox.ReplayAll()
     expected = False
@@ -152,12 +207,34 @@ class TestDownload(mox.MoxTestBase):
 
   def testLocalFileOpenFails(self):
     """Verify clean return value when local file fails to open."""
-    test_file = tempfile.TemporaryFile()
-    self.mox.StubOutWithMock(os.path, 'join')
-    urllib.urlopen('test_url').AndReturn(test_file)
     os.path.join(IsA(str), IsA(str)).AndReturn('')
+    urllib.urlopen('test_url').AndReturn(self.test_file)
     self.mox.ReplayAll()
     self.assertFalse(cb_url_lib.Download(self.url))
+
+  def testGsdUrlGoodLocalFileOpenSucceeds(self):
+    """Verify return value when GSD URL opens properly."""
+    test_result = CommandResult()
+    test_result.returncode = 0
+
+    os.path.join(IsA(str), IsA(str)).AndReturn(self.named_file.name)
+    cb_url_lib.RunCommand(
+        ['gsutil', 'cp', self.gsd_url, self.named_file.name],
+        redirect_stdout=True, redirect_stderr=True).AndReturn(test_result)
+    self.mox.ReplayAll()
+    self.assertTrue(cb_url_lib.Download(self.gsd_url))
+
+  def testGsdUrlFileCopyFails(self):
+    """Verify return value when gsutil copy fails."""
+    test_result = CommandResult()
+    test_result.returncode = -1
+
+    os.path.join(IsA(str), IsA(str)).AndReturn(self.named_file.name)
+    cb_url_lib.RunCommand(
+        ['gsutil', 'cp', self.gsd_url, self.named_file.name],
+        redirect_stdout=True, redirect_stderr=True).AndReturn(test_result)
+    self.mox.ReplayAll()
+    self.assertFalse(cb_url_lib.Download(self.gsd_url))
 
 
 class TestDetermineThenDownloadCheckMd5(mox.MoxTestBase):
@@ -286,7 +363,7 @@ class TestDownloadCheckMd5(mox.MoxTestBase):
                                           self.md5name).AndReturn(False)
     cb_url_lib.Download(self.url).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(cb_constants.BundlingError,
+    self.assertRaises(BundlingError,
                       cb_url_lib.DownloadCheckMd5,
                       self.url,
                       self.path,
@@ -300,7 +377,7 @@ class TestDownloadCheckMd5(mox.MoxTestBase):
     cb_url_lib.Download(self.url).AndReturn(True)
     cb_url_lib.Download(self.md5url).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(cb_constants.BundlingError,
+    self.assertRaises(BundlingError,
                       cb_url_lib.DownloadCheckMd5,
                       self.url,
                       self.path,
@@ -316,11 +393,22 @@ class TestDownloadCheckMd5(mox.MoxTestBase):
     cb_url_lib.Download(self.md5url).AndReturn(True)
     cb_url_lib.CheckMd5(self.name, self.md5name).AndReturn(False)
     self.mox.ReplayAll()
-    self.assertRaises(cb_constants.BundlingError,
+    self.assertRaises(BundlingError,
                       cb_url_lib.DownloadCheckMd5,
                       self.url,
                       self.path,
                       self.desc)
+
+
+class TestConvertHttpToGsUrl(unittest.TestCase):
+  """Unit tests for _ConvertHttpToGsUrl method."""
+
+  def testConvertHttpToGsUrl(self):
+    expected = 'gs://chromeos-releases/stable-channel/x86-alex/0.12.433.269/*'
+    http_url = ('https://sandbox.google.com/storage/chromeos-releases/'
+                'stable-channel/x86-alex/0.12.433.269')
+    actual = cb_url_lib._ConvertHttpToGsUrl(http_url)
+    self.assertEqual(expected, actual)
 
 
 if __name__ == "__main__":
