@@ -9,6 +9,7 @@ import cb_archive_hashing_lib
 import cb_command_lib
 import cb_name_lib
 import cb_url_lib
+import cb_util
 import logging
 import os
 import re
