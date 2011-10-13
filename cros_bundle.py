@@ -8,26 +8,19 @@
 Usage details in <ChromeOS_root>/src/platform/factory-utils/cros_bundle_readme.
 """
 
-import cb_command_lib
-import cb_constants
-import cb_name_lib
-import cb_url_lib
-import cros_bundle_lib
 import logging
 import os
 import shutil
 
-from cb_constants import BundlingError
+from cb_command_lib import IsInsideChroot, UploadToGsd
+from cb_constants import BundlingError, MOUNT_POINT, WORKDIR
+from cb_name_lib import RunWithNamingRetries
+from cros_bundle_lib import CheckParseOptions, FetchImages, MakeFactoryBundle
 from optparse import OptionParser
 
 
-def HandleParseOptions():
-  """Configures and retrieves options from option parser.
-
-  Returns:
-    an object, the options given to the script
-    the OptionParser used to parse input options
-  """
+def CreateParser():
+  """Creates a command-line flags parser for testing."""
   parser = OptionParser(usage=__doc__)
   parser.add_option('-b', '--board', action='store', type='string',
                     dest='board', help='target board')
@@ -75,6 +68,17 @@ def HandleParseOptions():
                     help='makes full release image with stateful partition')
   parser.add_option('--chromeos_root', action='store', dest='chromeos_root',
                     help='root directory of ChromeOS source tree checkout')
+  return parser
+
+
+def HandleParseOptions():
+  """Configures and retrieves options from option parser.
+
+  Returns:
+    an object, the options given to the script
+    the OptionParser used to parse input options
+  """
+  parser = CreateParser()
   (options, args) = parser.parse_args()
   log_level = dict(DEBUG=logging.DEBUG,
                    INFO=logging.INFO,
@@ -96,35 +100,32 @@ def main():
     BundlingError when image fetch or bundle processing fail.
   """
   (options, parser) = HandleParseOptions()
-  if not os.path.exists(cb_constants.WORKDIR):
-    os.makedirs(cb_constants.WORKDIR)
+  if not os.path.exists(WORKDIR):
+    os.makedirs(WORKDIR)
   logging.basicConfig(level=logging.DEBUG,
-                      filename=os.path.join(cb_constants.WORKDIR,
-                                            'cros_bundle.log'))
+                      filename=os.path.join(WORKDIR, 'cros_bundle.log'))
   console = logging.StreamHandler()
   console.setLevel(options.loglevel if options.loglevel else logging.DEBUG)
   logging.getLogger('').addHandler(console)
-  cros_bundle_lib.CheckParseOptions(options, parser)
+  CheckParseOptions(options, parser)
   # TODO(benwin) run basic sanitization checks on options
-  if cb_command_lib.IsInsideChroot():
+  if IsInsideChroot():
     logging.error('Please run this script outside the chroot environment.')
     exit()
   if options.clean:
     logging.info('Cleaning up and exiting.')
-    if os.path.exists(cb_constants.WORKDIR):
-      shutil.rmtree(cb_constants.WORKDIR)
+    if os.path.exists(WORKDIR):
+      shutil.rmtree(WORKDIR)
       exit()
-  image_names = cb_name_lib.RunWithNamingRetries(None,
-                                                 cros_bundle_lib.FetchImages,
-                                                 options)
+  image_names = RunWithNamingRetries(None, FetchImages, options)
   if not image_names:
     raise BundlingError('Failed to determine URL at which to fetch images, '
                         'please check the logged URLs attempted.')
   if not options.mount_point:
-    options.mount_point = cb_constants.MOUNT_POINT
-  tarname = cros_bundle_lib.MakeFactoryBundle(image_names, options)
+    options.mount_point = MOUNT_POINT
+  tarname = MakeFactoryBundle(image_names, options)
   if options.do_upload:
-    cb_command_lib.UploadToGsd(tarname)
+    UploadToGsd(tarname)
 
 
 if __name__ == "__main__":

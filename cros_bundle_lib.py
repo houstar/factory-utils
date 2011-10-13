@@ -241,6 +241,8 @@ def MakeMd5Sums(bundle_dir):
       if re.search(binary_file_pattern, filename):
         file_list.append(os.path.join(bundle_dir, directory, filename))
   md5filename = os.path.join(bundle_dir, 'file_checksum.md5')
+
+  lines_written = []
   try:
     with open(md5filename, 'w') as md5file:
       for absfilename in file_list:
@@ -251,9 +253,71 @@ def MakeMd5Sums(bundle_dir):
         rel_name_list = ['.']
         rel_name_list.extend(absfilename.split(os.sep)[-2:])
         relfilename = os.sep.join(rel_name_list)
-        md5file.write(md5sum + '  ' + relfilename + '\n')
+        line = (md5sum + '  ' + relfilename + '\n')
+        lines_written.append(line)
+        md5file.write(line)
+    return lines_written
   except IOError:
-    raise BundlingError('Failed to compute md5 checksums for factory bundle.')
+    raise BundlingError('Failed to open file for writing md5 checksums.')
+
+
+def _GetResourceUrlAndPath(desc, get_func, *args):
+  """Wrapper method for obtaining a resource.
+
+  Args:
+    desc: a string, resource description.
+    get_func: a function object, function to execute.
+    args: arguments to pass into func.
+
+  Returns:
+    url: a string, URL to the resource.
+    path: a string, local path to the downloaded resource. Or None if error.
+  """
+  url, pat = get_func(*args)
+  path = DetermineThenDownloadCheckMd5(url, pat, WORKDIR, desc)
+  return (url, path)
+
+
+def _HandleFactoryImageAndShim(rec_url, options, alt_naming):
+  """Logic for handling factory image and shim.
+
+  Args:
+    options: an object containing inputs to the script
+    alt_naming: optional, see docstring for GetNameComponents in cb_name_lib.py
+
+  Returns:
+    absfactorybin: a string, path to factory image.
+    shim_name: a string, name of factory shim.
+  """
+  fac_url, fac_pat = GetFactoryName(options.board, options.factory, alt_naming)
+  fac_det_url = DetermineUrl(fac_url, fac_pat)
+  if not fac_det_url:
+    raise BundlingError('Factory image exact URL could not be determined '
+                        'on page %s given pattern %s.' % (fac_url, fac_pat))
+
+  fac_name = os.path.join(WORKDIR, fac_det_url.split('/')[-1])
+  if not os.path.exists(fac_name):
+    logging.info('Downloading ' + fac_det_url)
+    if not Download(fac_det_url):
+      raise BundlingError('Factory image could not be fetched.')
+  logging.info('Resource %s is present.', fac_name)
+
+  factorybin = os.path.join('factory_test', 'chromiumos_factory_image.bin')
+  absfactorybin = os.path.join(WORKDIR, factorybin)
+  if not os.path.exists(absfactorybin):
+    logging.info('Extracting factory image binary')
+    if not ZipExtract(fac_name, factorybin, path=WORKDIR):
+      raise BundlingError('Could not find chromiumos_factory_image.bin '
+                          'in factory image.')
+  logging.info('Resource %s is present.', absfactorybin)
+
+  # Factory Install Shim
+  _, shim_pat = GetShimName(options.board, options.shim, alt_naming)
+  # shim is to be found on index page of recovery image sought, even if it
+  # has a name that suggests it would be on another channel index page
+  shim_name = DetermineThenDownloadCheckMd5(rec_url, shim_pat, WORKDIR,
+                                            'Factory Install Shim')
+  return (absfactorybin, shim_name)
 
 
 def FetchImages(options, alt_naming=0):
@@ -280,76 +344,44 @@ def FetchImages(options, alt_naming=0):
     BundlingError when resources cannot be fetched.
   """
   # Recovery
-  rec_url, rec_pat = GetRecoveryName(options.board, options.recovery,
-                                     alt_naming)
-  rec_name = DetermineThenDownloadCheckMd5(
-      rec_url, rec_pat, WORKDIR, 'Recovery image')
+  rec_url, rec_name = _GetResourceUrlAndPath(
+      'Recovery image', GetRecoveryName, options.board, options.recovery,
+      alt_naming)
 
   # Release
   if options.release:
-    rel_url, rel_pat = GetReleaseName(options.board, options.release,
-                                      alt_naming)
-    rel_name = DetermineThenDownloadCheckMd5(
-        rel_url, rel_pat, WORKDIR, 'Release image')
+    rel_url, rel_name = _GetResourceUrlAndPath(
+        'Release image', GetReleaseName, options.board, options.release,
+        alt_naming)
   else:
     # if needed, run recovery to ssd conversion now that we have recovery image
     rel_name = ConvertRecoveryToSsd(rec_name, options)
     if not MakeMd5(rel_name, rel_name + '.md5'):
-      raise BundlingError('Failed to create md5 checksum for file %s.' %
-                          rel_name)
+      raise BundlingError('Failed to create md5 checksum for %s' % rel_name)
 
   # Optional Extra Release
   rel_name2 = None
   if options.release2:
-    rel_url2, rel_pat2 = GetReleaseName(options.board2, options.release2,
-                                        alt_naming)
-    rel_name2 = DetermineThenDownloadCheckMd5(rel_url2, rel_pat2, WORKDIR,
-                                              'Second release image')
+    rel_url2, rel_name2 = _GetResourceUrlAndPath(
+        'Second release image', GetReleaseName, options.board2,
+        options.release2, alt_naming)
+
   # Optional Extra Recovery
   rec_name2 = None
   if options.recovery2:
-    rec_url2, rec_pat2 = GetRecoveryName(options.board2, options.recovery2,
-                                         alt_naming)
-    rec_name2 = DetermineThenDownloadCheckMd5(rec_url2, rec_pat2, WORKDIR,
-                                              'Second recovery image')
+    rec_url2, rec_name2 = _GetResourceUrlAndPath(
+        'Second recovery image', GetRecoveryName, options.board2,
+        options.recovery2, alt_naming)
     # if provided a second recovery image but no matching ssd, run conversion
     if not options.release2:
       rel_name2 = ConvertRecoveryToSsd(rec_name2, options)
 
-  image_names = dict(ssd=rel_name,
-                     ssd2=rel_name2,
-                     recovery=rec_name,
+  image_names = dict(ssd=rel_name, ssd2=rel_name2, recovery=rec_name,
                      recovery2=rec_name2)
   # Factory and Shim
-  fac_url, fac_pat = GetFactoryName(options.board, options.factory, alt_naming)
   if not options.fsi:
-    # Factory Test Image
-    fac_det_url = DetermineUrl(fac_url, fac_pat)
-    if not fac_det_url:
-      raise BundlingError('Factory image exact URL could not be determined '
-                          'on page %s given pattern %s.' % (fac_url, fac_pat))
-    fac_name = os.path.join(WORKDIR, fac_det_url.split('/')[-1])
-    if not os.path.exists(fac_name):
-      logging.info('Downloading ' + fac_det_url)
-      if not Download(fac_det_url):
-        raise BundlingError('Factory image could not be fetched.')
-    logging.info('Resource %s is present.', fac_name)
-
-    factorybin = os.path.join('factory_test', 'chromiumos_factory_image.bin')
-    absfactorybin = os.path.join(WORKDIR, factorybin)
-    if not os.path.exists(absfactorybin):
-      logging.info('Extracting factory image binary')
-      if not ZipExtract(fac_name, factorybin, path=WORKDIR):
-        raise BundlingError('Could not find chromiumos_factory_image.bin '
-                            'in factory image.')
-    logging.info('Resource %s is present.', absfactorybin)
-
-    # Factory Install Shim
-    (shim_url, shim_pat) = GetShimName(options.board, options.shim, alt_naming)
-    # shim is to be found on index page of recovery image sought, even if it
-    # has a name that suggests it would be on another channel index page
-    shim_name = DetermineThenDownloadCheckMd5(rec_url, shim_pat, WORKDIR,
-                                              'Factory Install Shim')
+    (absfactorybin, shim_name) = _HandleFactoryImageAndShim(
+        rec_url, options, alt_naming)
     image_names.update(dict(factorybin=absfactorybin, shim=shim_name))
 
   return image_names
