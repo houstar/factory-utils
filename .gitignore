@@ -1,1 +1,4 @@
-*.pyc
+cros_bundle/*.pyc
+factory_setup/*.pyc
+factory_setup/miniomaha.conf
+factory_setup/static
