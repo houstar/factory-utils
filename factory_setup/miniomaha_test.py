@@ -4,7 +4,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""Regression tests for devserver."""
+"""Regression tests for miniomaha server."""
 
 import json
 import os
@@ -19,11 +19,11 @@ from xml.dom import minidom
 
 # Paths are relative to this script's base directory.
 STATIC_DIR = 'static'
-TEST_IMAGE_PATH = 'testdata/devserver'
+TEST_IMAGE_PATH = 'testdata/miniomaha'
 TEST_IMAGE_NAME = 'developer-test.gz'
 TEST_IMAGE = TEST_IMAGE_PATH + '/' + TEST_IMAGE_NAME
-TEST_FACTORY_CONFIG = 'testdata/devserver/miniomaha-test.conf'
-TEST_DATA_PATH = '/tmp/devserver-test'
+TEST_FACTORY_CONFIG = 'testdata/miniomaha/miniomaha-test.conf'
+TEST_DATA_PATH = '/tmp/miniomaha-test'
 TEST_CLIENT_PREFIX = 'ChromeOSUpdateEngine'
 
 UPDATE_REQUEST = """<?xml version="1.0" encoding="UTF-8"?>
@@ -59,7 +59,7 @@ base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
 os.chdir("/")
 
 class DevserverTest(unittest.TestCase):
-  """Regressions tests for devserver."""
+  """Regressions tests for miniomaha."""
 
   def setUp(self):
     """Copies in testing files."""
@@ -84,7 +84,7 @@ class DevserverTest(unittest.TestCase):
     """Tests --validate_factory_config."""
     cmd = [
         'python',
-        os.path.join(base_dir, 'devserver.py'),
+        os.path.join(base_dir, 'miniomaha.py'),
         '--validate_factory_config',
         '--factory_config', self.factory_config,
     ]
@@ -94,11 +94,11 @@ class DevserverTest(unittest.TestCase):
     self.assertTrue('Config file looks good.' in stdout)
 
   def _StartServer(self, data_dir=''):
-    """Starts devserver, returns process."""
+    """Starts miniomaha, returns process."""
     cmd = [
         'python',
-        os.path.join(base_dir, 'devserver.py'),
-        'devserver.py',
+        os.path.join(base_dir, 'miniomaha.py'),
+        'miniomaha.py',
         '--factory_config', self.factory_config,
     ]
     if data_dir:
@@ -140,7 +140,7 @@ class DevserverTest(unittest.TestCase):
 
   def testHandleDatadirUpdate(self):
     """Tests getting an update from a specified datadir"""
-    # Push the image to the expected path where devserver picks it up.
+    # Push the image to the expected path where miniomaha picks it up.
     image_path = os.path.join(TEST_DATA_PATH, STATIC_DIR)
     if not os.path.exists(image_path):
       os.makedirs(image_path)

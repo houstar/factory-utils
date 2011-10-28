@@ -30,14 +30,14 @@ def _ChangeUrlPort(url, new_port):
   return urlparse.urlunsplit((scheme, netloc, path, query, fragment))
 
 
-class Autoupdate(object):
+class ServerEngine(object):
   """Class that contains functionality that handles Chrome OS update pings.
 
   Members:
     factory_config_path: Path to the factory config file if handling factory
       requests.
     static_dir: Path to store installation packages.
-    port: port to host devserver
+    port: port to host miniomaha
     proxy_port: port of local proxy to tell client to connect to you through.
   """
 

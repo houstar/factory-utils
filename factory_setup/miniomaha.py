@@ -6,9 +6,8 @@
 
 """A CherryPy-based webserver to host factory installation."""
 
-# TODO(hungte) This a special fork for serving factory and may be executed in a
-# very limited environment without full CrOS source tree.
-# We need to clean up this file and remove build / autoupdate stuff.
+# This a special fork from devserver for serving factory and may be executed in
+# a very limited environment without full CrOS source tree.
 
 import cherrypy
 import optparse
@@ -16,7 +15,7 @@ import os
 import subprocess
 import sys
 
-import autoupdate
+import miniomaha_engine
 
 CACHED_ENTRIES = 12
 
@@ -25,7 +24,7 @@ global updater
 updater = None
 
 def _GetConfig(options):
-  """Returns the configuration for the devserver."""
+  """Returns the configuration for the miniomaha."""
   base_config = { 'global':
                   { 'server.log_request_headers': True,
                     'server.protocol_version': 'HTTP/1.1',
@@ -144,15 +143,13 @@ if __name__ == '__main__':
   parser.set_usage(parser.format_help())
   (options, _) = parser.parse_args()
 
-  devserver_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-
   static_dir = os.path.realpath('%s/static' % options.data_dir)
   os.system('mkdir -p %s' % static_dir)
 
   cherrypy.log('Data dir is %s' % options.data_dir, 'DEVSERVER')
   cherrypy.log('Serving from %s' % static_dir, 'DEVSERVER')
 
-  updater = autoupdate.Autoupdate(
+  updater = miniomaha_engine.ServerEngine(
       static_dir=static_dir,
       factory_config_path=options.factory_config,
       port=options.port,
