@@ -6,6 +6,7 @@
 """This module contains methods for interacting with online resources."""
 
 import contextlib
+import fnmatch
 import formatter
 import logging
 import os
@@ -84,18 +85,23 @@ def _ConvertHttpToGsUrl(url):
   return gs_url + '/*'
 
 
-def DetermineUrl(url, pattern):
-  """Return an exact URL linked from a page given a pattern to match.
+def DetermineUrl(url, token_list):
+  """Return an exact URL linked from a page given a token_list to match.
 
   Assuming links are relative from the given page.
-  If more than one URL is found to match, the first will be returned.
-  Any other matches will be logged as a warning.
+  If more than one URL is found to match, only the first is returned.
+  All other matches are logged as warnings.
+
+  token_list MUST contain tokens for beginning and end of a string to search.
+  Example: to match filename 'ChromeOS-factory-R17-1235.3.0-a1-b2-stumpy.zip',
+           good_token_list = ['chromeos', 'factory', 'stumpy', '.zip']
 
   Args:
-    url: html page with a relative link matching the pattern
-    pattern: a string, a regex pattern to match within links present on page
+    url: html page with a relative file links.
+    token_list: a list of strings, in the order they are expected in the url.
+
   Returns:
-    a string, an exact URL, or None if URL not present or link not found
+    a string, an exact URL, or None if URL not present or link not found.
   """
   logging.debug('DetermineUrl(): HTTP url = %r', url)
   try:
@@ -110,7 +116,7 @@ def DetermineUrl(url, pattern):
                (http_url, result.output, result.error))
         logging.error(msg)
       else:
-        return MatchUrl(result.output.split('\n'), pattern)
+        return MatchUrl(result.output.split('\n'), token_list)
     else:
       usock = urllib.urlopen(url)
       htmlformatter = formatter.NullFormatter()
@@ -118,7 +124,7 @@ def DetermineUrl(url, pattern):
       parser.feed(usock.read())
       usock.close()
       parser.close()
-      link = MatchUrl(parser.urls, pattern)
+      link = MatchUrl(parser.urls, token_list)
       if link:
         return os.path.join(url, link)
   except IOError:
@@ -127,28 +133,45 @@ def DetermineUrl(url, pattern):
   return None
 
 
-def MatchUrl(url_list, pattern):
-  """Return a URL from a list given a pattern to match.
+def MatchUrl(url_list, token_list):
+  """Return a URL from a list given a token_list to match.
 
-  If more than one URL is found to match, the first will be returned.
-  Any other matches will be logged as a warning.
+  Sample match:
+    url = 'gs://chromeos-releases/dev-channel/stumpy/1235.3.0/\
+           ChromeOS-factory-R17-1235.3.0-a1-b2-stumpy.zip'
+    token_list = ['chromeos-factory', '1235.23.0', 'stumpy', '.zip']
+
+  Using fnmatch over re so that we don't need to constantly update regex
+  patterns whenever build team changes its file naming convention (and breaks
+  our script).
+
+  If more than one URL is found to match, only the first match is returned
+  and a warning is logged.
 
   Args:
-    url_list: a list of URLs to match against
-    pattern: a string, a regex pattern to match
+    url_list: a list of strings (full URLs).
+    token_list: a list of strings, see DetermineUrl() docstring.
+
   Returns:
-    a string, a matching URL, or None if no matching URL found
+    a string, a matching URL, or None if no match found.
   """
-  pat = re.compile(pattern)
-  if url_list:
-    matches = [u for u in url_list if pat.search(u)]
-    if matches:
-      if len(matches) > 1:
-        logging.warning('More than one resource matching %s found.', pattern)
-        for match in matches[1:]:
-          logging.warning('Additional match %s found and ignored.', match)
-      return matches[0]
-  return None
+  if not url_list or not token_list:
+    return None
+
+  match_list = []
+
+  for url in url_list:
+    filename = os.path.basename(url)
+    if fnmatch.fnmatch(filename.lower(), '*'.join(token_list)):
+      match_list.append(url)
+
+  if not match_list:
+    return None
+
+  if len(match_list) > 1:
+    logging.warning('MatchUrl(): token_list %r matches multiple urls (%r)',
+                    token_list, match_list)
+  return match_list[0]
 
 
 def Download(url):
@@ -165,7 +188,7 @@ def Download(url):
   Returns:
     a boolean, True only when file is fully downloaded
   """
-  local_file_name = os.path.join(WORKDIR, url.split('/')[-1])
+  local_file_name = os.path.join(WORKDIR, os.path.basename(url))
   try:
     if url.startswith(IMAGE_GSD_BUCKET):
       result = RunCommand(['gsutil', 'cp', url, local_file_name],
@@ -187,23 +210,26 @@ def Download(url):
   return False
 
 
-def DetermineThenDownloadCheckMd5(url, pattern, path, desc):
+def DetermineThenDownloadCheckMd5(url, token_list, path, desc):
   """Determine exact url then download the resource and check MD5.
 
   Args:
-    url: html page with a relative link matching the pattern
-    pattern: a string, a regex pattern to match within links present on page
-    path: absolute path of directory to put resource
-    desc: a short string description of the resource to fetch
+    url: html page with a relative file links.
+    token_list: a list of strings, see DetermineUrl() docstring.
+    path: absolute path of directory to put resource.
+    desc: a short string description of the resource to fetch.
+
   Returns:
-    a string, the absolute path to the resource, None on failure
+    a string, the absolute path to the resource, None on failure.
+
   Raises:
     BundlingError when resources cannot be fetched or download integrity fails.
   """
-  det_url = DetermineUrl(url, pattern)
+  det_url = DetermineUrl(url, token_list)
   if not det_url:
-    raise NameResolutionError(desc + ' exact URL could not be determined '
-                              'given input: ' + ' '.join([url, pattern]))
+    err = ' '.join([desc, 'exact URL could not be determined given input:', url]
+                   + token_list)
+    raise NameResolutionError(err)
   return DownloadCheckMd5(det_url, path, desc)
 
 
@@ -236,7 +262,7 @@ def DownloadCheckMd5(url, path, desc):
   Raises:
     BundlingError when resources cannot be fetched or download integrity fails.
   """
-  name = os.path.join(path, url.split('/')[-1])
+  name = os.path.join(path, os.path.basename(url))
   if CheckResourceExistsWithMd5(name, name + '.md5'):
     logging.info('Resource %s already exists with good MD5, skipping fetch.',
                  name)

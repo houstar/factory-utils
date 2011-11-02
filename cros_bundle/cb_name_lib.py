@@ -72,15 +72,15 @@ def GetReleaseName(board, release, alt_naming=0):
     board: target board
     release: release candidate version, channel, and signing key
     alt_naming: optional, see docstring for GetNameComponents.
+
   Returns:
     rel_url: a string, the release page URL
-    rel_pat: a string, the naming pattern for the release image
+    token_list: a list of strings, in the order they are expected in the url.
   """
   (rel_url, rel_no, rel_ch, rel_key) = GetNameComponents(board, release,
                                                          alt_naming)
-  rel_pat = '_'.join(['chromeos', rel_no, board, 'ssd', rel_ch,
-             rel_key + '.*[.]bin$'])
-  return (rel_url, rel_pat)
+  token_list = ['chromeos', rel_no, board, 'ssd', rel_ch, rel_key, '.bin']
+  return (rel_url, token_list)
 
 
 def GetFactoryName(board, factory, alt_naming=0):
@@ -92,7 +92,7 @@ def GetFactoryName(board, factory, alt_naming=0):
     alt_naming: optional, see docstring for GetNameComponents.
   Returns:
     fac_url: a string, the release page URL
-    fac_pat: a string, the naming pattern for the factory image
+    token_list: a list of strings, in the order they are expected in the url.
   """
   fac_no, fac_ch = factory.split('/')
   fac_ch = fac_ch + '-channel'
@@ -105,8 +105,8 @@ def GetFactoryName(board, factory, alt_naming=0):
     fac_url = os.path.join(IMAGE_GSD_PREFIX, fac_ch, board, fac_no)
   else:
     fac_url = os.path.join(IMAGE_SERVER_PREFIX, fac_ch, board, fac_no)
-  fac_pat = ''.join(['ChromeOS-factory-', fac_no, '.*', board, '[.]zip$'])
-  return (fac_url, fac_pat)
+  token_list = ['chromeos-factory', fac_no, board, '.zip']
+  return (fac_url, token_list)
 
 
 def GetShimName(board, shim, alt_naming=0):
@@ -118,13 +118,12 @@ def GetShimName(board, shim, alt_naming=0):
     alt_naming: optional, see docstring for GetNameComponents.
   Returns:
     rec_url: a string, the release page URL
-    rec_pat: a string, the naming pattern for the install shim
+    token_list: a list of strings, in the order they are expected in the url.
   """
   (shim_url, shim_no, shim_ch, shim_key) = GetNameComponents(board, shim,
                                                              alt_naming)
-  shim_pat = '_'.join(['chromeos', shim_no, board, 'factory', shim_ch,
-             shim_key + '.*[.]bin$'])
-  return (shim_url, shim_pat)
+  token_list = ['chromeos', board, 'factory', shim_ch, shim_key, '.bin']
+  return (shim_url, token_list)
 
 
 def GetRecoveryName(board, recovery, alt_naming=0):
@@ -136,13 +135,12 @@ def GetRecoveryName(board, recovery, alt_naming=0):
     alt_naming: optional, see docstring for GetNameComponents.
   Returns:
     rec_url: a string, the release page URL
-    rec_pat: a string, the naming pattern for the recovery image
+    token_list: a list of strings, in the order they are expected in the url.
   """
   (rec_url, rec_no, rec_ch, rec_key) = GetNameComponents(board, recovery,
                                                          alt_naming)
-  rec_pat = '_'.join(['chromeos', rec_no, board, 'recovery', rec_ch,
-             rec_key + '.*[.]bin$'])
-  return (rec_url, rec_pat)
+  token_list = ['chromeos', rec_no, board, 'recovery', rec_ch, rec_key, '.bin']
+  return (rec_url, token_list)
 
 
 def ResolveRecoveryUrl(board, recovery, alt_naming=0):
@@ -159,8 +157,8 @@ def ResolveRecoveryUrl(board, recovery, alt_naming=0):
   Raises:
     NameResolutionError on failure
   """
-  (index_page, rec_pat) = GetRecoveryName(board, recovery, alt_naming)
-  rec_url = DetermineUrl(index_page, rec_pat)
+  (index_page, token_list) = GetRecoveryName(board, recovery, alt_naming)
+  rec_url = DetermineUrl(index_page, token_list)
   # TODO(benwin) common logic with DetermineThenDownloadCheckMd5, refactor?
   if not rec_url:
     raise NameResolutionError('Recovery image exact URL could not be '

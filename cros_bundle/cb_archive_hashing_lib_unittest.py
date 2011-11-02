@@ -158,7 +158,7 @@ class ZipExtract(unittest.TestCase):
     myfile = tempfile.NamedTemporaryFile()
     myfile.write('sample file content inserted here to be zipped')
     myfile.seek(0)
-    self.filename = myfile.name.split(os.sep)[-1]
+    self.filename = os.path.basename(myfile.name)
     zpf = zipfile.ZipFile(self.zipname, mode='w')
     zpf.write(myfile.name, arcname=self.filename)
     zpf.close()
@@ -209,7 +209,7 @@ class TestMakeTar(unittest.TestCase):
     test_file = tempfile.NamedTemporaryFile(prefix=self.test_dir)
     test_file.write('sample file content inserted here to be tarred')
     test_dest = tempfile.mkdtemp()
-    folder_name = self.test_dir.split(os.sep)[-1]
+    folder_name = os.path.basename(self.test_dir)
     expected_name = os.path.join(test_dest, folder_name + '.tar.bz2')
     actual_name = cb_archive_hashing_lib.MakeTar(self.test_dir, test_dest)
     self.assertEqual(expected_name, actual_name)

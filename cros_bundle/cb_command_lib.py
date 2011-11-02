@@ -24,9 +24,18 @@ CHROOT_REL_DIR = 'tmp/bundle_tmp'
 
 # Mapping of firmware internal name to regular expression patterns.
 FIRMWARE_MAP = {
-    'ec': {'name': cb_constants.EC_NAME, 'pattern': 'EC image:.*(Alex.*)'},
-    'ec2': {'name': cb_constants.EC2_NAME, 'pattern': 'Extra file:.*(Alex.*)'},
-    'bios': {'name': cb_constants.BIOS_NAME, 'pattern': 'BIOS image:.*(Alex.*)'}
+    'x86-alex': {
+        'ec': {'name': cb_constants.EC_NAME['x86-alex'],
+               'pattern': 'EC image:.*(Alex.*)'},
+        'ec2': {'name': cb_constants.EC2_NAME['x86-alex'],
+                'pattern': 'Extra file:.*(Alex.*)'},
+        'bios': {'name': cb_constants.BIOS_NAME['x86-alex'],
+                 'pattern': 'BIOS image:.*(Alex.*)'}
+        },
+    'stumpy': {
+        'bios': {'name': cb_constants.BIOS_NAME['stumpy'],
+                 'pattern': 'BIOS image:.*(Stumpy.*)'}
+        },
     }
 
 
@@ -52,19 +61,19 @@ def CheckEnvironment(image_name, firmware_dest, mount_point):
   - mounting point is available for mounting
 
   Args:
-    image_name: absolute file path to SSD release image binary
-    firmware_dest: absolute path to directory firmware should go
-    mount_point: dir to mount SSD image, defaults to cb_constants._MOUNT_POINT
+    image_name: a string, absolute file path to SSD release image binary.
+    firmware_dest: a string, absolute path to directory firmware should go.
+    mount_point: a string, directory to mount SSD image. Defaults to
+                 cb_constants._MOUNT_POINT
   Returns:
-    a boolean, True when the conditions checked are all satisfied
+    a boolean, True when the conditions checked are all satisfied.
   """
-  # TODO(benwin) refactor so this check comes at the beginning of the script
+  # TODO(benwin) refactor so this check comes at the beginning of cros_bundle.py
   res = True
   if not re.search('/src/scripts$', os.getcwd()):
     logging.error('\nPlease run this script from the src/scripts directory.\n')
     res = False
-  cmd_result = RunCommand(['which', 'uudecode'],
-                          redirect_stdout=True)
+  cmd_result = RunCommand(['which', 'uudecode'], redirect_stdout=True)
   output_string = cmd_result.output
   if not output_string:
     logging.error('\nMissing uudecode. Please run sudo apt-get install '
@@ -107,80 +116,95 @@ def UploadToGsd(filename):
   RunCommand(['gsutil', 'cp', filename, cb_constants.GSD_BUCKET])
 
 
-def _ExtractFirmwareFilename(fw_type, lines):
+def _ExtractFirmwareFilename(fw_type, board, fw_content):
   """Parses chromeos-firmwareupdate output for proper firmware file name.
 
   Background:
-   - factory ssd image comes with a binary executable named
-     'chromeos-firmwareupdate'
-   - this command can display firmware info on the actual hardware
-   - when we run this command to extract EC firmware, one of the EC firmware
-     files is 'ec.bin'
-   - in a factory bundle, it's desired to use an alternative naming for this
-     file
+   - factory ssd image comes with a binary executable 'chromeos-firmwareupdate'
+   - we use this executable to extract EC firmware for Alex (i.e. 'ec.bin')
+   - for Alex factory bundle, use an alternative name for this EC firmware
 
   Sample output of chromeos-firmwareupdate command (truncated):
     EC image:     4d02c93315c880efdfc50ef12b281c9e \
     */build/x86-alex_he/tmp/portage/chromeos-base/<SNIP>/Alex_EC_XHA002M.bin
+    <--snip-->
+    Package Content:
     4d02c93315c880efdfc50ef12b281c9e *./ec.bin
 
-  In this example, we want to name 'ec.bin' as 'Alex_EC_XHA002M.bin' in the
-  output bundle.
+  In this example, we want to rename 'ec.bin' as 'Alex_EC_XHA002M.bin' in the
+  output bundle (both lines contain the same hash value).
 
   Args:
     fw_type: a string, type of firmware. Valid values are keys in FIRMWARE_MAP.
-    lines: a list of strings, output of 'chromeos-firmwareupdate -V'.
+    board: a string, target board.
+    fw_content: a list of strings, output of 'chromeos-firmwareupdate -V'.
 
   Returns:
-    rename: a string, external firmware filename, e.g. Alex_EC_XHA002M.bin.
+    rename: a string, desired firmware filename. Or None if no match found.
   """
-  rename = FIRMWARE_MAP[fw_type]['name']
-  fw_pat = re.compile(FIRMWARE_MAP[fw_type]['pattern'])
-  fw_searches = [fw_pat.search(line) for line in lines]
+  rename = FIRMWARE_MAP[board][fw_type]['name']
+  fw_pat = re.compile(FIRMWARE_MAP[board][fw_type]['pattern'])
+  fw_searches = [fw_pat.search(line) for line in fw_content]
   fw_matches = [match.group(1) for match in fw_searches if match]
   if fw_matches:
-    if rename != fw_matches[0]:
-      rename = fw_matches[0]
-  else:
     #TODO(tgao): ask factory team if this should be an error condition
-    logging.warning('Proper renaming of firmware %s failed.', rename)
+    if len(fw_matches) > 1:
+      logging.warning('Multiple matches of firmware names: fw_type = %r, '
+                      'board = %r', fw_type, board)
+    if rename != fw_matches[0]:
+      return fw_matches[0]
+
+  #TODO(tgao): ask factory team if this should be an error condition
+  logging.warning('Proper renaming of firmware %s failed.', rename)
   return rename
 
 
-def ListFirmware(image_name, cros_fw):
+def ListFirmware(image_name, cros_fw, board):
   """Gets list of strings representing contents of firmware.
 
-  Only handles Alex firmware at present.
+  As of 11/2011, only handles Alex and Stumpy firmwares.
 
   Args:
-    image_name: absolute file path to SSD release image binary
-    cros_fw: absolute path of firmware extraction script
+    image_name: a string, absolute file path to SSD release image binary.
+    cros_fw: a string, absolute path of firmware extraction script.
+    board: a string, target board.
+
   Returns:
-    a tuple of strings (ec_name, ec2_name, bios_name)
+    a dict, {fw_type: fw_name}.
+
   Raises:
     BundlingError when necessary files missing.
   """
   if not os.path.exists(cros_fw):
-    raise cb_constants.BundlingError(
-        'Necessary file chromeos-firmwareupdate missing from %s.' % image_name)
+    err = 'File chromeos-firmwareupdate missing from %s.' % image_name
+    raise cb_constants.BundlingError(err)
+
   cmd_result = RunCommand([cros_fw, '-V'], redirect_stdout=True)
   output = cmd_result.output
   if not output:
-    raise cb_constants.BundlingError(
-        'Failed to get output from script %s.' % cros_fw)
+    err = 'Failed to get output from script %s.' % cros_fw
+    raise cb_constants.BundlingError(err)
+
   logging.debug('ListFirmware(): chromeos-firmwareupdate output = %s', output)
-  lines = output.split('\n')
-  searches = [re.search('[.]/(.*)', line) for line in lines]
+  fw_content = output.split('\n')
+  pat = re.compile('[.]/(.*)')
+  # Look for mandatory firmware files in chromeos-firmwareupdate output.
+  # For example, if fw_content = """
+  # Package Content:
+  #   57350ea0958cb39a715ddd4ccf2f0e92 *./bios.bin"""
+  # searches = [None, None, <sre.SRE_Match object at 0x...>, ]
+  # fw_files = ['bios.bin']
+  searches = [pat.search(line) for line in fw_content]
   fw_files = [match.group(1) for match in searches if match]
-  for f in [FIRMWARE_MAP[k]['name'] for k in FIRMWARE_MAP.keys()]:
+  for f in [FIRMWARE_MAP[board][k]['name'] for k in FIRMWARE_MAP[board].keys()]:
     if f not in fw_files:
       raise cb_constants.BundlingError('Necessary file %s missing from %s.' %
                                        (f, cros_fw))
 
-  # TODO(benwin) add additional branching for h2c binary
-  return (_ExtractFirmwareFilename('ec', lines),
-          _ExtractFirmwareFilename('ec2', lines),
-          _ExtractFirmwareFilename('bios', lines))
+  fw_names = dict()
+  for fw_type in FIRMWARE_MAP[board].keys():
+    fw_names[fw_type] = _ExtractFirmwareFilename(fw_type, board, fw_content)
+  return fw_names
 
 
 def ExtractFiles(cros_fw):
@@ -206,50 +230,57 @@ def ExtractFiles(cros_fw):
   return None
 
 
-def ExtractFirmware(image_name, firmware_dest, mount_point):
+def ExtractFirmware(image_name, firmware_dest, mount_point, board):
   """Extract firmware from an SSD image to help prepare a factory bundle.
 
-  Requires current directory to be <ChromeOS_root>/src/scripts.
-  Requires sudoer password entry to mount SSD image.
-  Requires use of uudecode utility available in package sharutils.
-  Requires mount_point is free to mount SSD image.
-  Requires firmware destination directory exists and is writable.
+  See docstring of CheckEnvironment() for environmental prerequisites.
 
   Args:
-    image_name: absolute file path to SSD release image binary
-    firmware_dest: absolute path to directory firmware should go
-    mount_point: dir  to mount SSD image, defaults to cb_constants._MOUNT_POINT
+    image_name: a string, absolute file path to SSD release image binary.
+    firmware_dest: a string, absolute path to directory firmware should go.
+    mount_point: a string, directory to mount SSD image.
+    board: a string, target board.
   Raises:
     BundlingError when necessary tools are missing or SSD mounting fails.
   """
   if not CheckEnvironment(image_name, firmware_dest, mount_point):
     raise cb_constants.BundlingError(
         'Environment check failed, please fix conditions listed above.')
-  image = image_name.split(os.sep)[-1]
+
+  image = os.path.basename(image_name)
   try:
-    # mount SSD image at mount_point
     logging.info('Mounting SSD image.')
-    RunCommand(['./mount_gpt_image.sh', '--read_only', '--safe',
-                '--from=' + cb_constants.WORKDIR, '--image=' + image,
-                '--rootfs_mountpt=' + mount_point])
+    cmd_result = RunCommand([
+        './mount_gpt_image.sh', '--read_only', '--safe',
+        '='.join(['--from', cb_constants.WORKDIR]),
+        '='.join(['--image', image]),
+        '='.join(['--rootfs_mountpt', mount_point])
+       ])
     if not os.path.exists(mount_point) or not os.listdir(mount_point):
-      raise cb_constants.BundlingError(
-          'Failed to mount SSD image at mount point %s' % mount_point)
+      err = ('Failed to mount SSD image at %s: cmd_result = %r' %
+             (mount_point, cmd_result))
+      raise cb_constants.BundlingError(err)
+
     cros_fw = os.path.join(mount_point, 'usr', 'sbin',
                            'chromeos-firmwareupdate')
-    (ec_name, ec2_name, bios_name) = ListFirmware(image_name, cros_fw)
+    fw_name = ListFirmware(image_name, cros_fw, board)
     firmdir = ExtractFiles(cros_fw)
     if not firmdir:
       raise cb_constants.BundlingError('Failed to extract firmware files.')
-    shutil.copy(os.path.join(firmdir, cb_constants.EC_NAME),
-                os.path.join(firmware_dest, ec_name))
-    shutil.copy(os.path.join(firmdir, cb_constants.EC2_NAME),
-                os.path.join(firmware_dest, ec2_name))
-    shutil.copy(os.path.join(firmdir, cb_constants.BIOS_NAME),
-                os.path.join(firmware_dest, bios_name))
+
+    for k, v in FIRMWARE_MAP[board].iteritems():
+      src_path = os.path.join(firmdir, v['name'])
+      if not os.path.exists(src_path):
+        logging.debug('shutil: skip non-existing file %s', src_path)
+        continue
+      dst_path = os.path.join(firmware_dest, fw_name[k])
+      shutil.copy(src_path, dst_path)
+
+    # Per yongjaek in 11/2011, also copy chromeos-firmwareupdate shellball
     shutil.copy(cros_fw, firmware_dest)
   finally:
     RunCommand(['./mount_gpt_image.sh', '--unmount'])
+
   filename = os.path.join(cb_constants.WORKDIR, image_name)
   md5filename = filename + '.md5'
   if not CheckMd5(filename, md5filename):
@@ -397,12 +428,12 @@ def RecoveryToFullSsdNoChroot(image_name, options):
         'Could not find URL match for recovery version %s on page %s' %
         (recovery, index_page))
   rec_no = recovery.split('/')[0]
-  zip_pat = '-'.join(['ChromeOS', rec_no, '.*', board + '.zip'])
-  zip_url = DetermineUrl(index_page, zip_pat)
+  token_list = ['chromeos', rec_no, board,  '.zip']
+  zip_url = DetermineUrl(index_page, token_list)
   if not zip_url:
     raise cb_constants.BundlingError(
-        'Failed to determine name of zip file for pattern %s on page %s' %
-        (zip_pat, index_page))
+        'Failed to determine name of zip file for token_list %s on page %s' %
+        (token_list, index_page))
   if not Download(zip_url):
     raise cb_constants.BundlingError('Failed to download %s.' % zip_url)
   zip_name = os.path.join(cb_constants.WORKDIR, os.path.basename(zip_url))

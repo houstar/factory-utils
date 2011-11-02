@@ -201,7 +201,7 @@ def MakeFactoryBundle(image_names, options):
         raise BundlingError('Directory %s exists. Use -f to overwrite.' %
                             firmware_dest)
     os.mkdir(firmware_dest)
-    ExtractFirmware(ssd_name, firmware_dest, mount_point)
+    ExtractFirmware(ssd_name, firmware_dest, mount_point, options.board)
     logging.info('Successfully extracted firmware to %s', firmware_dest)
   shutil.copy(ssd_name, dir_dict.get('release', None))
   shutil.copy(rec_name, dir_dict.get('recovery', None))
@@ -251,8 +251,8 @@ def MakeMd5Sums(bundle_dir):
           raise BundlingError('Failed to compute MD5 checksum for file %s.' %
                               absfilename)
         rel_name_list = ['.']
-        rel_name_list.extend(absfilename.split(os.sep)[-2:])
-        relfilename = os.sep.join(rel_name_list)
+        rel_name_list.extend(absfilename.split('/')[-2:])
+        relfilename = '/'.join(rel_name_list)
         line = (md5sum + '  ' + relfilename + '\n')
         lines_written.append(line)
         md5file.write(line)
@@ -278,7 +278,7 @@ def _GetResourceUrlAndPath(desc, get_func, *args):
   return (url, path)
 
 
-def _HandleFactoryImageAndShim(rec_url, options, alt_naming):
+def _HandleFactoryImageAndShim(options, alt_naming):
   """Logic for handling factory image and shim.
 
   Args:
@@ -289,13 +289,14 @@ def _HandleFactoryImageAndShim(rec_url, options, alt_naming):
     absfactorybin: a string, path to factory image.
     shim_name: a string, name of factory shim.
   """
-  fac_url, fac_pat = GetFactoryName(options.board, options.factory, alt_naming)
-  fac_det_url = DetermineUrl(fac_url, fac_pat)
+  fac_url, token_list = GetFactoryName(options.board, options.factory,
+                                       alt_naming)
+  fac_det_url = DetermineUrl(fac_url, token_list)
   if not fac_det_url:
     raise BundlingError('Factory image exact URL could not be determined '
-                        'on page %s given pattern %s.' % (fac_url, fac_pat))
+                        'on page %s given pattern %s.' % (fac_url, token_list))
 
-  fac_name = os.path.join(WORKDIR, fac_det_url.split('/')[-1])
+  fac_name = os.path.join(WORKDIR, os.path.basename(fac_det_url))
   if not os.path.exists(fac_name):
     logging.info('Downloading ' + fac_det_url)
     if not Download(fac_det_url):
@@ -312,10 +313,10 @@ def _HandleFactoryImageAndShim(rec_url, options, alt_naming):
   logging.info('Resource %s is present.', absfactorybin)
 
   # Factory Install Shim
-  _, shim_pat = GetShimName(options.board, options.shim, alt_naming)
+  _, token_list = GetShimName(options.board, options.shim, alt_naming)
   # shim is to be found on index page of recovery image sought, even if it
   # has a name that suggests it would be on another channel index page
-  shim_name = DetermineThenDownloadCheckMd5(rec_url, shim_pat, WORKDIR,
+  shim_name = DetermineThenDownloadCheckMd5(fac_url, token_list, WORKDIR,
                                             'Factory Install Shim')
   return (absfactorybin, shim_name)
 
@@ -380,8 +381,7 @@ def FetchImages(options, alt_naming=0):
                      recovery2=rec_name2)
   # Factory and Shim
   if not options.fsi:
-    (absfactorybin, shim_name) = _HandleFactoryImageAndShim(
-        rec_url, options, alt_naming)
+    (absfactorybin, shim_name) = _HandleFactoryImageAndShim(options, alt_naming)
     image_names.update(dict(factorybin=absfactorybin, shim=shim_name))
 
   return image_names

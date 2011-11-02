@@ -11,9 +11,9 @@ import os
 
 # Keep constants in ascending alphabetical order
 AU_GEN = 'au-generator.zip'
-BIOS_NAME = 'bios.bin'
-EC_NAME = 'ec.bin'
-EC2_NAME = 'Alex_EC_VFA616M.bin'
+BIOS_NAME = {'x86-alex': 'bios.bin', 'stumpy': 'bios.bin'}
+EC_NAME = {'x86-alex': 'ec.bin'}
+EC2_NAME = {'x86-alex': 'Alex_EC_VFA616M.bin'}
 GITURL = 'http://git.chromium.org/chromiumos/platform/vboot_reference.git'
 # TODO(benwin) update to production value once it is determined
 GSD_BUCKET = 'gs://chromeos-download-test'

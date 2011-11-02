@@ -133,12 +133,11 @@ def MakeTar(target_dir, destination_dir, name=None):
   if not output_string:
     logging.error('\nMissing pbzip2. Please run sudo apt-get install pbzip2\n')
     return None
-  folder_name = target_dir.split(os.sep)[-1]
+  folder_name = os.path.basename(target_dir)
   if not name:
     name = folder_name + '.tar.bz2'
   # use pbzip2 for speed
   name = os.path.join(destination_dir, name)
-  parent_dir = target_dir[0:target_dir.rfind(os.sep)]
   RunCommand(['tar', '-c', '-I', 'pbzip2', folder_name, '-f', name],
-             cwd=parent_dir)
+             cwd=os.path.dirname(target_dir))
   return name

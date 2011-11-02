@@ -45,7 +45,8 @@ def _AssertFirmwareError(obj):
   obj.assertRaises(cb_constants.BundlingError,
                    cb_command_lib.ListFirmware,
                    obj.image_name,
-                   obj.cros_fw)
+                   obj.cros_fw,
+                   obj.board)
 
 
 def _AssertInstallCgptError(obj):
@@ -235,15 +236,12 @@ class TestListFirmware(mox.MoxTestBase):
     self.cros_fw = 'chromeos-firmwareupdate'
     self.mock_cres = CommandResult()
 
-  def testListFirmwareSuccess(self):
-    """Verify return value when all goes well."""
-    ec_new_name = 'Alex1234'
-    bios_new_name = 'AlexABCD'
-    fake_output = '\n'.join(['EC image: ' + ec_new_name,
-                             'BIOS image: ' + bios_new_name,
-                             './' + cb_constants.EC_NAME,
-                             './' + cb_constants.EC2_NAME,
-                             './' + cb_constants.BIOS_NAME])
+    self.board = 'x86-alex'
+    self.alex_ec = cb_constants.EC_NAME[self.board]
+    self.alex_ec2 = cb_constants.EC2_NAME[self.board]
+    self.alex_bios = cb_constants.BIOS_NAME[self.board]
+
+  def _VerifySuccess(self, fake_output, expected):
     self.mock_cres.output = fake_output
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
@@ -251,9 +249,31 @@ class TestListFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
-    expected = (ec_new_name, cb_constants.EC2_NAME, bios_new_name)
-    actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
+    actual = cb_command_lib.ListFirmware(self.image_name,
+                                         self.cros_fw,
+                                         self.board)
     self.assertEqual(expected, actual)
+
+  def testListFirmwareSuccessForAlex(self):
+    """Verify return value for Alex when all goes well."""
+    ec_new_name = 'Alex1234'
+    bios_new_name = 'AlexABCD'
+    fake_output = '\n'.join(['EC image: ' + ec_new_name,
+                             'BIOS image: ' + bios_new_name,
+                             './' + self.alex_ec,
+                             './' + self.alex_ec2,
+                             './' + self.alex_bios])
+    expected = dict(ec=ec_new_name, ec2=self.alex_ec2, bios=bios_new_name)
+    self._VerifySuccess(fake_output, expected)
+
+  def testListFirmwareSuccessForStumpy(self):
+    """Verify return value for Stumpy when all goes well."""
+    self.board = 'stumpy'
+    bios_new_name = 'StumpyNew'
+    stumpy_bios = cb_constants.BIOS_NAME[self.board]
+    fake_output = '\n'.join(['BIOS image: ' + bios_new_name,
+                             './' + stumpy_bios])
+    self._VerifySuccess(fake_output, dict(bios=bios_new_name))
 
   def testCrosFwDoesNotExist(self):
     """Verify error when provided script name is bad."""
@@ -261,39 +281,39 @@ class TestListFirmware(mox.MoxTestBase):
     self.assertRaises(cb_constants.BundlingError,
                       cb_command_lib.ListFirmware,
                       self.image_name,
-                      self.cros_fw)
+                      self.cros_fw,
+                      self.board)
 
   def testCrosFwFails(self):
     """Verify error when provided script fails to output."""
     self.mock_cres.output = ''
     _AssertFirmwareError(self)
 
-  def testEcNotPresent(self):
+  def testAlexEcNotPresent(self):
     """Verify error when EC firmware file not found."""
-    self.mock_cres.output = '\n'.join(['test line 1',
-                                       './' + cb_constants.BIOS_NAME])
+    self.mock_cres.output = '\n'.join(['test line 1', './' + self.alex_bios])
     _AssertFirmwareError(self)
 
-  def testBiosNotPresent(self):
+  def testAlexBiosNotPresent(self):
     """Verify error when BIOS firmware file not found."""
-    self.mock_cres.output = '\n'.join(['test line 1',
-                                       './' + cb_constants.EC_NAME])
+    self.mock_cres.output = '\n'.join(['test line 1', './' + self.alex_ec])
     _AssertFirmwareError(self)
 
-  def testRenamingFails(self):
+  def testAlexRenamingFails(self):
     """Verify graceful behavior when specific naming info not provided."""
-    self.mock_cres.output = '\n'.join(['./' + cb_constants.EC_NAME,
-                                       './' + cb_constants.EC2_NAME,
-                                       './' + cb_constants.BIOS_NAME])
+    self.mock_cres.output = '\n'.join(['./' + self.alex_ec,
+                                       './' + self.alex_ec2,
+                                       './' + self.alex_bios])
     self.mox.StubOutWithMock(os.path, 'exists')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
     os.path.exists(mox.IsA(str)).AndReturn(True)
     cb_command_lib.RunCommand(mox.IsA(list),
                               redirect_stdout=True).AndReturn(self.mock_cres)
     self.mox.ReplayAll()
-    expected = (cb_constants.EC_NAME, cb_constants.EC2_NAME,
-                cb_constants.BIOS_NAME)
-    actual = cb_command_lib.ListFirmware(self.image_name, self.cros_fw)
+    expected = dict(ec=self.alex_ec, ec2=self.alex_ec2, bios=self.alex_bios)
+    actual = cb_command_lib.ListFirmware(self.image_name,
+                                         self.cros_fw,
+                                         self.board)
     self.assertEqual(expected, actual)
 
 
@@ -362,6 +382,8 @@ class TestExtractFirmware(mox.MoxTestBase):
     self.image_name = '/abs/path/to/image_name'
     self.firmware_dest = '/abs/path/to/dir/firmware/should/go'
     self.mount_point = '/mnt/ssd/here'
+    self.board = 'x86-alex'
+
     self.mox.StubOutWithMock(cb_command_lib, 'CheckEnvironment')
     self.mox.StubOutWithMock(cb_command_lib, 'RunCommand')
     self.mox.StubOutWithMock(os.path, 'exists')
@@ -379,19 +401,21 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('ec_name', 'ec2_name', 'bios_name'))
+    cb_command_lib.ListFirmware(
+        mox.IsA(str), mox.IsA(str), self.board).AndReturn(
+            dict(ec='ec_name', ec2='ec2_name', bios='bios_name'))
     cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
-    shutil.copy(mox.IsA(str), mox.IsA(str))
-    shutil.copy(mox.IsA(str), mox.IsA(str))
-    shutil.copy(mox.IsA(str), mox.IsA(str))
+    for i in range(3):  # Test for alex only
+      os.path.exists(mox.IsA(str)).AndReturn(True)
+      shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.CheckMd5(mox.IsA(str), mox.IsA(str)).AndReturn(True)
     self.mox.ReplayAll()
     cb_command_lib.ExtractFirmware(self.image_name,
                                    self.firmware_dest,
-                                   self.mount_point)
+                                   self.mount_point,
+                                   self.board)
 
   def testCheckEnvironmentBad(self):
     """Verify error when environment check fails."""
@@ -403,7 +427,8 @@ class TestExtractFirmware(mox.MoxTestBase):
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
-                      self.mount_point)
+                      self.mount_point,
+                      self.board)
 
   def testMountSsdFailsMountPointNotThere(self):
     """Verify error when SSD image is not mounted."""
@@ -418,7 +443,8 @@ class TestExtractFirmware(mox.MoxTestBase):
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
-                      self.mount_point)
+                      self.mount_point,
+                      self.board)
 
   def testMountSsdFailsMountPointEmpty(self):
     """Verify error when SSD image is not mounted."""
@@ -434,7 +460,8 @@ class TestExtractFirmware(mox.MoxTestBase):
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
-                      self.mount_point)
+                      self.mount_point,
+                      self.board)
 
   def testFirmwareExtractionFails(self):
     """Verify error when firmware extraction fails."""
@@ -444,8 +471,9 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('_ignore', '_ignore', '_ignore'))
+    cb_command_lib.ListFirmware(
+        mox.IsA(str), mox.IsA(str), self.board).AndReturn(
+            ('_ignore', '_ignore', '_ignore'))
     cb_command_lib.ExtractFiles(mox.IsA(str))
     cb_command_lib.RunCommand(mox.IsA(list))
     self.mox.ReplayAll()
@@ -453,7 +481,8 @@ class TestExtractFirmware(mox.MoxTestBase):
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
-                      self.mount_point)
+                      self.mount_point,
+                      self.board)
 
   def testImageCorrupted(self):
     """Verify error when firmware extraction corrupts SSD image.
@@ -466,12 +495,13 @@ class TestExtractFirmware(mox.MoxTestBase):
     cb_command_lib.RunCommand(mox.IsA(list))
     os.path.exists(self.mount_point).AndReturn(True)
     os.listdir(self.mount_point).AndReturn(['stuff', 'is', 'here'])
-    cb_command_lib.ListFirmware(mox.IsA(str), mox.IsA(str)).AndReturn(
-        ('_ignore', '_ignore', '_ignore'))
+    cb_command_lib.ListFirmware(
+        mox.IsA(str), mox.IsA(str), self.board).AndReturn(
+            dict(bios='_ignore', ec='_ignore', ec2='_ignore'))
     cb_command_lib.ExtractFiles(mox.IsA(str)).AndReturn('/tmp/firmware_dir')
-    shutil.copy(mox.IsA(str), mox.IsA(str))
-    shutil.copy(mox.IsA(str), mox.IsA(str))
-    shutil.copy(mox.IsA(str), mox.IsA(str))
+    for i in range(3):  # Test for alex only
+      os.path.exists(mox.IsA(str)).AndReturn(True)
+      shutil.copy(mox.IsA(str), mox.IsA(str))
     shutil.copy(mox.IsA(str), mox.IsA(str))
     cb_command_lib.RunCommand(mox.IsA(list))
     cb_command_lib.CheckMd5(mox.IsA(str), mox.IsA(str)).AndReturn(False)
@@ -480,7 +510,8 @@ class TestExtractFirmware(mox.MoxTestBase):
                       cb_command_lib.ExtractFirmware,
                       self.image_name,
                       self.firmware_dest,
-                      self.mount_point)
+                      self.mount_point,
+                      self.board)
 
 
 class TestHandleGitExists(mox.MoxTestBase):
@@ -679,7 +710,7 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
         self.board, self.recovery, alt_naming=0).AndReturn(
             (self.rec_url, self.index_page))
     cb_command_lib.DetermineUrl(self.index_page,
-                            mox.IsA(str)).AndReturn(self.zip_url)
+                            mox.IsA(list)).AndReturn(self.zip_url)
     cb_command_lib.Download(self.zip_url).AndReturn(True)
     cb_command_lib.HandleSsdExists(self.ssd_name, self.force)
     cb_command_lib.InstallCgpt(self.index_page, self.force)
@@ -713,7 +744,7 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
     cb_command_lib.ResolveRecoveryUrl(
         self.board, self.recovery, alt_naming=0).AndReturn(
             (self.rec_url, self.index_page))
-    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(None)
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(list)).AndReturn(None)
     _AssertConvertRecoveryError(self)
 
   def testBaseImageZipDownloadFails(self):
@@ -724,7 +755,7 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
     cb_command_lib.ResolveRecoveryUrl(
         self.board, self.recovery, alt_naming=0).AndReturn(
             (self.rec_url, self.index_page))
-    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(list)).AndReturn(
         self.zip_url)
     cb_command_lib.Download(self.zip_url).AndReturn(False)
     _AssertConvertRecoveryError(self)
@@ -742,7 +773,7 @@ class TestConvertRecoveryToSsd(mox.MoxTestBase):
     cb_command_lib.ResolveRecoveryUrl(
         self.board, self.recovery, alt_naming=0).AndReturn(
             (self.rec_url, self.index_page))
-    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(str)).AndReturn(
+    cb_command_lib.DetermineUrl(self.index_page, mox.IsA(list)).AndReturn(
         self.zip_url)
     cb_command_lib.Download(self.zip_url).AndReturn(True)
     cb_command_lib.HandleSsdExists(self.ssd_name, self.force)

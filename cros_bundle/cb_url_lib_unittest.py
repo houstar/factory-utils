@@ -76,10 +76,10 @@ class TestDetermineUrl(mox.MoxTestBase):
     self.mox.StubOutWithMock(urllib, 'urlopen')
     self.mox.StubOutWithMock(cb_url_lib, 'RunCommand')
     self.url = 'test_url'
-    self.pattern = 'ChromeOS-0.*'
+    self.pattern = ['chromeos', '.zip']
     self.http_url = IMAGE_GSD_PREFIX + '/test_url'
     self.gsd_url = IMAGE_GSD_BUCKET + '/test_url/*'
-    self.gsd_pattern = 'chromeos_0.*[.]bin$'
+    self.gsd_pattern = ['chromeos', '.bin']
 
   def testHttpUrlGood(self):
     """Verify URL returned when page opens properly."""
@@ -150,27 +150,58 @@ class TestMatchUrl(unittest.TestCase):
   """Unit tests related to MatchUrl."""
 
   def setUp(self):
-    self.pattern = 'abc.*'
+    self.token_list = ['abc', '.bin']
+    self.filename = 'abcdefghi.bin'
 
   def testNoMatch(self):
     """Verify behavior when no match exists."""
-    links = ['abd', 'acd', 'two']
-    actual = cb_url_lib.MatchUrl(links, self.pattern)
+    url_list = ['abd.bin', 'acd.bin']
+    actual = cb_url_lib.MatchUrl(url_list, self.token_list)
     self.assertEqual(None, actual)
 
   def testOneMatch(self):
     """Verify string returned upon a single good match."""
-    expected = '0abcdefghi'
-    links = ['abd', 'acd', expected, 'two']
-    actual = cb_url_lib.MatchUrl(links, self.pattern)
-    self.assertEqual(expected, actual)
+    url_list = ['abd.bin', 'acd.bin', self.filename]
+    actual = cb_url_lib.MatchUrl(url_list, self.token_list)
+    self.assertEqual(self.filename, actual)
 
   def testManyMatches(self):
     """verify string returned upon multiple good matches."""
-    expected = '0abcdefghi'
-    links = ['abd', 'acd', expected, 'abc', 'bdfhabc', 'two']
-    actual = cb_url_lib.MatchUrl(links, self.pattern)
-    self.assertEqual(expected, actual)
+    url_list = [self.filename, 'abc.bin', 'bdfhabc.bin']
+    actual = cb_url_lib.MatchUrl(url_list, self.token_list)
+    self.assertEqual(self.filename, actual)
+
+  def testMatchUrlEmptyUrl(self):
+    """Verify behavior when input url_list is empty."""
+    self.assertFalse(cb_url_lib.MatchUrl([], self.token_list))
+
+  def testMatchUrlEmptyTokenList(self):
+    """Verify behavior when input token_list is empty."""
+    self.assertFalse(cb_url_lib.MatchUrl(['url'], []))
+
+  def testMatchUrlWithFullUrl(self):
+    """Verify good match when input url is a full path."""
+    test_url = os.path.join('http://domain.com', self.filename)
+    self.assertTrue(cb_url_lib.MatchUrl([test_url], self.token_list))
+
+  def testMatchUrlWithFilenameOnly(self):
+    """Verify good match when input url is a filename (no path info)."""
+    self.assertTrue(cb_url_lib.MatchUrl([self.filename], self.token_list))
+
+  def testMatchUrlWithFilenameOnlyMixedCase(self):
+    """Verify good match when input url is a filename (no path info)."""
+    self.filename = 'aBcdEfgHI.biN'
+    self.assertTrue(cb_url_lib.MatchUrl([self.filename], self.token_list))
+
+  def testMatchUrlMissingStartToken(self):
+    """Verify no match when token_list lacks beginning of filename."""
+    self.token_list[0] = 'ghi'
+    self.assertFalse(cb_url_lib.MatchUrl([self.filename], self.token_list))
+
+  def testMatchUrlMissingEndToken(self):
+    """Verify no match when token_list lacks end of filename."""
+    self.token_list[1] = '.bi'
+    self.assertFalse(cb_url_lib.MatchUrl([self.filename], self.token_list))
 
 
 class TestDownload(mox.MoxTestBase):
@@ -244,7 +275,7 @@ class TestDetermineThenDownloadCheckMd5(mox.MoxTestBase):
     self.mox = mox.Mox()
     self.mox.StubOutWithMock(cb_url_lib, 'DetermineUrl')
     self.url = 'url'
-    self.pattern = 'pattern'
+    self.pattern = ['pattern']
     self.path = 'path'
     self.desc = 'desc'
 

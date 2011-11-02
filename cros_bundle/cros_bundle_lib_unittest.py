@@ -153,7 +153,6 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
     self.fac_name = os.path.join(WORKDIR, 'file')
     self.fac_pat = 'fac_pat'
     self.fac_url = 'fac_url'
-    self.rec_url = 'rec_url'
     self.factorybin = os.path.join('factory_test',
                                    'chromiumos_factory_image.bin')
     self.absfactorybin = os.path.join(WORKDIR, self.factorybin)
@@ -170,7 +169,7 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
     self.mox.ReplayAll()
     self.assertRaises(
         BundlingError, cros_bundle_lib._HandleFactoryImageAndShim,
-        self.rec_url, self.options, self.alt_naming)
+        self.options, self.alt_naming)
 
   def testHandleFactoryImageAndShimDownloadFailRaisesError(self):
     """Error downloading factory image."""
@@ -181,7 +180,7 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
     self.mox.ReplayAll()
     self.assertRaises(
         BundlingError, cros_bundle_lib._HandleFactoryImageAndShim,
-        self.rec_url, self.options, self.alt_naming)
+        self.options, self.alt_naming)
 
   def testHandleFactoryImageAndShimExtractFailRaisesError(self):
     """Error extracting factory image."""
@@ -194,7 +193,7 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
     self.mox.ReplayAll()
     self.assertRaises(
         BundlingError, cros_bundle_lib._HandleFactoryImageAndShim,
-        self.rec_url, self.options, self.alt_naming)
+        self.options, self.alt_naming)
 
   def testHandleFactoryImageAndShimGoodNoDownloadNoExtract(self):
     """Verify success with no image download or extraction."""
@@ -208,11 +207,11 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
         self.options.board, self.options.shim, self.alt_naming).AndReturn(
         (None, self.shim_pat))
     cros_bundle_lib.DetermineThenDownloadCheckMd5(
-        self.rec_url, self.shim_pat, WORKDIR, mox.IgnoreArg()).AndReturn(
+        self.fac_url, self.shim_pat, WORKDIR, mox.IgnoreArg()).AndReturn(
         self.shim_name)
     self.mox.ReplayAll()
-    actual = cros_bundle_lib._HandleFactoryImageAndShim(
-        self.rec_url, self.options, self.alt_naming)
+    actual = cros_bundle_lib._HandleFactoryImageAndShim(self.options,
+                                                        self.alt_naming)
     self.assertEqual(expected, actual)
 
   def testHandleFactoryImageAndShimGoodDownloadAndExtract(self):
@@ -230,11 +229,11 @@ class TestHandleFactoryImageAndShim(mox.MoxTestBase):
         self.options.board, self.options.shim, self.alt_naming).AndReturn(
         (None, self.shim_pat))
     cros_bundle_lib.DetermineThenDownloadCheckMd5(
-        self.rec_url, self.shim_pat, WORKDIR, mox.IgnoreArg()).AndReturn(
+        self.fac_url, self.shim_pat, WORKDIR, mox.IgnoreArg()).AndReturn(
         self.shim_name)
     self.mox.ReplayAll()
-    actual = cros_bundle_lib._HandleFactoryImageAndShim(
-        self.rec_url, self.options, self.alt_naming)
+    actual = cros_bundle_lib._HandleFactoryImageAndShim(self.options,
+                                                        self.alt_naming)
     self.assertEqual(expected, actual)
 
 
@@ -322,7 +321,7 @@ class TestFetchImages(mox.MoxTestBase):
        mox.IgnoreArg(), cros_bundle_lib.GetReleaseName, self.options.board,
        self.options.release, 0).AndReturn((self.rel_url, self.rel_name))
     cros_bundle_lib._HandleFactoryImageAndShim(
-        self.rec_url, self.options, 0).AndReturn((absfactorybin, shim_name))
+        self.options, 0).AndReturn((absfactorybin, shim_name))
     self.mox.ReplayAll()
     self.assertEqual(expected, cros_bundle_lib.FetchImages(self.options))
 
