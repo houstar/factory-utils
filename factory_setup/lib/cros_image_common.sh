@@ -221,7 +221,7 @@ image_mount_partition() {
 image_umount_partition() {
   local mount_point="$1"
 
-  sudo umount -d "$mount_point"
+  sudo umount "$mount_point"
 }
 
 # Copy a partition from one image to another (size must be equal)
@@ -275,7 +275,7 @@ image_clean_temp() {
 
   for object in $temp_list; do
     if [ -d "$object" ]; then
-      sudo umount -d "$object" >/dev/null 2>&1 || true
+      sudo umount "$object" >/dev/null 2>&1 || true
       sudo rmdir "$object" >/dev/null 2>&1 || true
     else
       rm -f "$object" >/dev/null 2>&1 || true
