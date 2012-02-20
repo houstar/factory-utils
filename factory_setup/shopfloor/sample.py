@@ -2,154 +2,159 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+"""ChromeOS factory shop floor system sample implementation, using CSV input.
 
-'''
-This module provides a sample implementation of factory shop floor system.
+This module provides an easy way to setup and use shop floor system. Use Google
+Docs or Excel to create a spreadsheet and export as CSV (comma separated
+values), with following fields:
 
-To use this module, run:
-  python shopfloor_server.py -m shopfloor.sample.SampleShopfloor
+  serial_number: The serial number of each device.
+  hwid: The HWID string assigned for each serial number.
+  ro_vpd_*: Read-only VPD values. Example: ro_vpd_test_data will be converted to
+            "test_data" in RO_VPD section.
+  rw_vpd_*: Read-writeable VPD values, using same syntax described in ro_vpd_*.
 
-To create your own module, start with "template.py".
-'''
+To use this module, run following command in factory_setup folder:
+  shopfloor_server.py -m shopfloor.sample.ShopFloor -c PATH_TO_CSV_FILE.csv
 
+You can find a sample CSV file in in:
+  factory_setup/test_data/shopfloor/sample.csv
+"""
 
-import copy
+import csv
 import logging
 import os
-import shelve
+import re
 import time
 
 import shopfloor
 
 
-class SampleShopFloor(shopfloor.ShopFloorBase):
-  '''The sample implementation for factory shop floor system.
-
-  This sample system stores everything in a Python dict (and serialized to
-  DEFAULT_DATA_STORE_FILE or the file assigned by config param),
-  initialized by function _CreateSampleDatabase.
-  '''
-  NAME = 'Sample Implementation (do NOT use for production)'
+class ShopFloor(shopfloor.ShopFloorBase):
+  """Sample shop floor system, using CSV file as input."""
+  NAME = "CSV-file based shop floor system"
   VERSION = 1
 
-  DEFAULT_DATA_STORE_FILE = '/tmp/cros_shopfloor.db'
-
   def __init__(self, config=None):
-    '''Initializes the sample shop floor server.
+    if not (config and os.path.exists(config)):
+      raise IOError("You must specify an existing CSV file by -c FILE.")
+    logging.info("Parsing %s...", config)
+    self.data_store = LoadCsvData(config)
+    logging.warn("Loaded %d entries from %s.", len(self.data_store), config)
 
-    Args:
-      config: File path for data store file name.
-    '''
-    logging.info('Shop floor system started.')
-    self.data_file = config or self.DEFAULT_DATA_STORE_FILE
-    self.data_store = None
-    try:
-      self.data_store = shelve.open(self.data_file, protocol=2)
-    except:
-      logging.critical('Invalid data store file: %s', self.data_file)
-      os.unlink(self.data_file)
-      self.data_store = shelve.open(self.data_file, protocol=2)
+    # In this sample implementation, we put uploaded reports in a "reports"
+    # folder where the input source (csv) file exists.
+    self.reports_dir = os.path.join(os.path.realpath(os.path.dirname(config)),
+                                    'reports')
+    if not os.path.isdir(self.reports_dir):
+      os.mkdir(self.reports_dir)
 
-    if (('VERSION' not in self.data_store) or
-        self.data_store['VERSION'] != self.VERSION):
-      logging.info('Re-creating sample data store.')
-      self.data_store.clear()
-      self.data_store.update(_CreateSampleDatabase())
-      self.data_store['VERSION'] = self.VERSION
-      self._Flush()
-
-  def _Flush(self):
-    '''Updates data store into persistent storage.'''
-    try:
-      self.data_store.sync()
-    except:
-      logging.critical('Failed to flush data store file: %s', self.data_file)
-
-  def _AppendStatus(self, serial, msg):
-    '''Appends one message to status log.'''
-    self.data_store[serial]['status'].append('%s %s' % (time.ctime(), msg))
-    self._Flush()
+    # Try to touch some files inside directory, to make sure the directory is
+    # writable, and everything I/O system is working fine.
+    stamp_file = os.path.join(self.reports_dir, ".touch")
+    with open(stamp_file, "w") as stamp_handle:
+      stamp_handle.write("%s - VERSION %s" % (self.NAME, self.VERSION))
+    os.remove(stamp_file)
 
   def _CheckSerialNumber(self, serial):
-    '''Checks if given serial number is in data store or not.
-
-    Raises:
-      ValueError if serial number is invalid.
-    '''
+    """Checks if serial number is valid, otherwise raise ValueError."""
     if serial in self.data_store:
       return True
-    logging.error('Unknown serial number: %s', serial)
-    raise ValueError('Unknown serial number: %s' % serial)
+    message = "Unknown serial number: %s" % serial
+    logging.error(message)
+    raise ValueError(message)
 
   def GetHWID(self, serial):
-    '''See help(ShopFloorBase.GetHWID)'''
-    logging.info('GetHWID(%s)', serial)
     self._CheckSerialNumber(serial)
-
-    self._AppendStatus(serial, 'GetHWID')
     return self.data_store[serial]['hwid']
 
   def GetVPD(self, serial):
-    '''See help(ShopFloorBase.GetVPD)'''
-    logging.info('GetVPD(%s)', serial)
     self._CheckSerialNumber(serial)
-
-    self._AppendStatus(serial, 'GetVPD')
     return self.data_store[serial]['vpd']
 
-  def UploadReport(self, serial, report_blob):
-    '''See help(ShopFloorBase.UploadReport)'''
-    logging.info('UploadReport(%s, [%s])', serial, len(report_blob))
+  def UploadReport(self, serial, report_blob, report_name=None):
+    def is_gzip_blob(blob):
+      """Check (not 100% accurate) if input blob is gzipped."""
+      GZIP_MAGIC = '\x1f\x8b'
+      return blob[:len(GZIP_MAGIC)] == GZIP_MAGIC
+
     self._CheckSerialNumber(serial)
-    self.data_store[serial]['reports'].append(report_blob)
-    self._AppendStatus(serial, 'UploadReport')
+    if isinstance(report_blob, shopfloor.Binary):
+      report_blob = report_blob.data
+    if not report_name:
+      report_name = ('%s-%s.rpt' % (re.sub('[^a-zA-Z0-9]', '', serial),
+                                    time.strftime("%Y%m%d-%H%M%S%z")))
+      if is_gzip_blob(report_blob):
+        report_name += ".gz"
+    report_path = os.path.join(self.reports_dir, report_name)
+    with open(report_path, "wb") as report_obj:
+      report_obj.write(report_blob)
 
   def Finalize(self, serial):
-    '''See help(ShopFloorBase.Finalize)'''
-    logging.info('Finalize(%s)', serial)
+    # Finalize is currently not implemented.
     self._CheckSerialNumber(serial)
-    self._AppendStatus(serial, 'Finalize')
+    logging.warn("Finalized: %s", serial)
 
 
-def _CreateSampleDatabase():
-  '''Returns sample database for shop floor system.'''
-  # Format of sample database:
-  # serial_number: { 'hwid': string,
-  #                  'vpd': { 'ro': dict, 'rw': dict },
-  #                  'reports': list,
-  #                  'status': list }
-  sample_hwids = ('TEST HWID A-A 4413',
-                  'TEST HWID A-B 0951',
-                  'TEST HWID2 A-A 3077',
-                  'TEST HWID2 A-B 7631')
-  # See gooftool/gft_vpd.py for mandatory fields.
-  sample_vpds = ({'ro': {'keyboard_layout': 'xkb:us::eng',
-                         'initial_locale': 'en-US',
-                         'initial_timezone': 'America/Los_Angeles'},
-                  'rw': {}},
-                 {'ro': {'keyboard_layout': 'xkb:de::ger',
-                         'initial_locale': 'de-DE',
-                         # Note: Amsterdam is not a German city, but currently
-                         # we use it for all UTC+1 regions. See test
-                         # factory_SelectRegion for more information.
-                         'initial_timezone': 'Europe/Amsterdam'},
-                  'rw': {}})
+def LoadCsvData(filename):
+  """Loads a CSV file and returns structured shop floor system data."""
+  # Required fields.
+  KEY_SERIAL_NUMBER = 'serial_number'
+  KEY_HWID = 'hwid'
+  # Optional fields.
+  PREFIX_RO_VPD = 'ro_vpd_'
+  PREFIX_RW_VPD = 'rw_vpd_'
+  VPD_PREFIXES = (PREFIX_RO_VPD, PREFIX_RW_VPD)
 
-  sample_database = {}
-  # Valid serial numbers in sample: 0100 ~ 0199.
-  sku_start = 100
-  sku_count = 100
-  sku_group_size = sku_count / len(sample_hwids)
+  REQUIRED_KEYS = (KEY_SERIAL_NUMBER, KEY_HWID)
+  OPTIONAL_PREFIXES = VPD_PREFIXES
 
-  for i in xrange(sku_count):
-    sku_index = i / sku_group_size
-    data = {}
-    serial_number = '%04d' % (sku_start + i)
-    data['hwid'] = sample_hwids[sku_index]
-    data['vpd'] = copy.deepcopy(sample_vpds[sku_index % len(sample_vpds)])
-    # wifi_mac_addr is a sample VPD - not a mandatory field.
-    data['vpd']['rw']['wifi_mac_addr'] = '0b:ad:f0:0d:01:%02x' % (sku_start + i)
-    data['reports'] = []
-    data['status'] = []
-    sample_database[serial_number] = data
-  return sample_database
+  def check_field_name(name):
+    """Checks if argument is an valid input name."""
+    if name in REQUIRED_KEYS:
+      return True
+    for prefix in OPTIONAL_PREFIXES:
+      if name.startswith(prefix):
+        return True
+    return False
+
+  def build_vpd(source):
+    """Builds VPD structure by input source."""
+    vpd = {'ro': {}, 'rw': {}}
+    for key, value in source.items():
+      for prefix in VPD_PREFIXES:
+        if not key.startswith(prefix):
+          continue
+        # Key format: $type_vpd_$name (ex, ro_vpd_serial_number)
+        (key_type, _, key_name) = key.split('_', 2)
+        if value is None:
+          continue
+        vpd[key_type][key_name.strip()] = value.strip()
+    return vpd
+
+  data = {}
+  with open(filename, 'rb') as source:
+    reader = csv.DictReader(source)
+    row_number = 0
+    for row in reader:
+      row_number += 1
+      if KEY_SERIAL_NUMBER not in row:
+        raise ValueError("Missing %s in row %d" % (KEY_SERIAL_NUMBER,
+                                                   row_number))
+      serial_number = row[KEY_SERIAL_NUMBER].strip()
+      hwid = row[KEY_HWID].strip()
+
+      # Checks data validity.
+      if serial_number in data:
+        raise ValueError("Duplicated %s in row %d: %s" %
+                         (KEY_SERIAL_NUMBER, row_number, serial_number))
+      if None in row:
+        raise ValueError("Extra fields in row %d: %s" %
+                         (row_number, ','.join(row[None])))
+      for field in row:
+        if not check_field_name(field):
+          raise ValueError("Invalid field: %s" % field)
+
+      entry = {'hwid': hwid, 'vpd': build_vpd(row)}
+      data[serial_number] = entry
+  return data

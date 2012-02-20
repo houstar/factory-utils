@@ -7,13 +7,16 @@
 """Unit tests for shop floor server."""
 
 import os
-import shopfloor_server
+import shutil
 import subprocess
 import sys
 import tempfile
 import time
 import unittest
 import xmlrpclib
+
+import shopfloor
+import shopfloor_server
 
 
 class ShopFloorServerTest(unittest.TestCase):
@@ -22,18 +25,22 @@ class ShopFloorServerTest(unittest.TestCase):
     '''Starts shop floor server and creates client proxy.'''
     self.server_port = shopfloor_server._DEFAULT_SERVER_PORT
     self.base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-    (handle, self.config_file) = tempfile.mkstemp(prefix='sft')
-    os.close(handle)
+    self.work_dir = tempfile.mkdtemp(prefix='sft')
+    csv_source = os.path.join(self.base_dir, 'testdata', 'shopfloor',
+                              'sample.csv')
+    csv_work = os.path.join(self.work_dir, 'sample.csv')
+    shutil.copyfile(csv_source, csv_work)
+
     cmd = ['python', os.path.join(self.base_dir, 'shopfloor_server.py'),
            '-q', '-a', 'localhost', '-p', str(self.server_port),
-           '-c', self.config_file, '-m', 'shopfloor.sample.SampleShopFloor']
+           '-m', 'shopfloor.sample.ShopFloor', '-c', csv_work]
     self.process = subprocess.Popen(cmd)
     self.proxy = xmlrpclib.ServerProxy('http://localhost:%s' % self.server_port,
                                        allow_none=True)
     # Waits the server to be ready, up to 1 second.
     for i in xrange(10):
       try:
-        self.proxy.system.listMethods()
+        self.proxy.Ping()
       except:
         time.sleep(0.1)
         continue
@@ -41,52 +48,82 @@ class ShopFloorServerTest(unittest.TestCase):
   def tearDown(self):
     '''Terminates shop floor server'''
     self.process.terminate()
-    os.remove(self.config_file)
+    shutil.rmtree(self.work_dir)
 
   def testGetHWID(self):
-    sample_hwids = ('TEST HWID A-A 4413',
-                    'TEST HWID A-B 0951',
-                    'TEST HWID2 A-A 3077',
-                    'TEST HWID2 A-B 7631')
-    # Simulating 100 devices, starting at "0100" and grouped according to number
-    # of sample_hwids
-    sku_start = 100
-    sku_count = 100
-    sku_group = sku_count / len(sample_hwids)
-    for i in xrange(sku_count):
-      serial = '%04d' % (sku_start + i)
-      hwid = sample_hwids[i / sku_group]
+    # Valid HWIDs range from CR001001 to CR001025
+    for i in range(25):
+      serial = 'CR0010%02d' % (i + 1)
       result = self.proxy.GetHWID(serial)
-      self.assertEqual(result, hwid)
+      self.assertTrue(result.startswith('MAGICA '))
+      self.assertEqual(len(result.split(' ')), 4)
 
     # Test invalid serial numbers
     self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, '0000')
     self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, 'garbage')
     self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, '')
+    self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, None)
+    self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, 'CR001000')
+    self.assertRaises(xmlrpclib.Fault, self.proxy.GetHWID, 'CR001026')
 
   def testGetVPD(self):
-    vpd = self.proxy.GetVPD('0100')
-    self.assertTrue('ro' in vpd)
-    self.assertTrue('rw' in vpd)
-    self.assertTrue(type(vpd['ro']) is dict)
-    self.assertTrue(type(vpd['rw']) is dict)
-    mandatory_fields = ('keyboard_layout',
-                        'initial_locale',
-                        'initial_timezone')
-    for field in mandatory_fields:
-      self.assertTrue(field in vpd['ro'])
-    self.assertEqual(vpd['rw']['wifi_mac_addr'], '0b:ad:f0:0d:01:64')
+    # VPD fields defined in sample.csv
+    RO_FIELDS = ('keyboard_layout', 'initial_locale', 'initial_timezone')
+    RW_FIELDS_SET1 = ('wifi_mac', 'cellular_mac')
+    RW_FIELDS_SET2 = ('wifi_mac', )
 
-    vpd = self.proxy.GetVPD('0199')
-    self.assertEqual(vpd['rw']['wifi_mac_addr'], '0b:ad:f0:0d:01:c7')
+    vpd = self.proxy.GetVPD('CR001005')
+    for field in RO_FIELDS:
+      self.assertTrue(field in vpd['ro'] and vpd['ro'][field])
+    for field in RW_FIELDS_SET1:
+      self.assertTrue(field in vpd['rw'] and vpd['rw'][field])
+    self.assertEqual(vpd['ro']['keyboard_layout'], 'xkb:us::eng')
+    self.assertEqual(vpd['ro']['initial_locale'], 'en-US')
+    self.assertEqual(vpd['ro']['initial_timezone'], 'America/Los_Angeles')
+    self.assertEqual(vpd['rw']['wifi_mac'], '0b:ad:f0:0d:15:05')
+    self.assertEqual(vpd['rw']['cellular_mac'], '70:75:65:6c:6c:65')
+
+    vpd = self.proxy.GetVPD('CR001016')
+    for field in RO_FIELDS:
+      self.assertTrue(field in vpd['ro'] and vpd['ro'][field])
+    for field in RW_FIELDS_SET2:
+      self.assertTrue(field in vpd['rw'] and vpd['rw'][field])
+    self.assertEqual(vpd['ro']['keyboard_layout'], 'xkb:us:intl:eng')
+    self.assertEqual(vpd['ro']['initial_locale'], 'nl')
+    self.assertEqual(vpd['ro']['initial_timezone'], 'Europe/Amsterdam')
+    self.assertEqual(vpd['rw']['wifi_mac'], '0b:ad:f0:0d:15:10')
+    self.assertTrue('cellular_mac' not in vpd['rw'])
+
+    # Checks MAC addresses
+    for i in range(25):
+      serial = 'CR0010%02d' % (i + 1)
+      vpd = self.proxy.GetVPD(serial)
+      wifi_mac = vpd['rw']['wifi_mac']
+      self.assertEqual(wifi_mac, "0b:ad:f0:0d:15:%02x" % (i + 1))
+      if i < 5:
+        cellular_mac = vpd['rw']['cellular_mac']
+        self.assertEqual(cellular_mac, "70:75:65:6c:6c:%02x" % (i + 0x61))
+
+    # Checks invalid serial numbers
+    self.assertRaises(xmlrpclib.Fault, self.proxy.GetVPD, 'MAGICA')
+    return True
+
 
   def testUploadReport(self):
-    blob = 'report data'
-    self.proxy.UploadReport('0101', blob)
-    self.assertRaises(xmlrpclib.Fault, self.proxy.UploadReport, '1000', blob)
+    # Upload simple blob
+    blob = 'Simple Blob'
+    report_name = 'simple_blob.rpt'
+    report_path = os.path.join(self.work_dir, 'reports', report_name)
+    self.proxy.UploadReport('CR001020', shopfloor.Binary('Simple Blob'),
+                            report_name)
+    self.assertTrue(os.path.exists(report_path))
+    self.assertTrue(open(report_path).read(), blob)
+
+    # Try to upload to invalid serial number
+    self.assertRaises(xmlrpclib.Fault, self.proxy.UploadReport, 'CR00200', blob)
 
   def testFinalize(self):
-    self.proxy.Finalize('0102')
+    self.proxy.Finalize('CR001024')
     self.assertRaises(xmlrpclib.Fault, self.proxy.Finalize, '0999')
 
 if __name__ == '__main__':
