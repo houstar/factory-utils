@@ -2,7 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""ChromeOS factory shop floor system sample implementation, using CSV input.
+"""ChromeOS factory shop floor system implementation, using CSV input.
 
 This module provides an easy way to setup and use shop floor system. Use Google
 Docs or Excel to create a spreadsheet and export as CSV (comma separated
@@ -15,10 +15,10 @@ values), with following fields:
   rw_vpd_*: Read-writeable VPD values, using same syntax described in ro_vpd_*.
 
 To use this module, run following command in factory_setup folder:
-  shopfloor_server.py -m shopfloor.sample.ShopFloor -c PATH_TO_CSV_FILE.csv
+  shopfloor_server.py -m shopfloor.simple.ShopFloor -c PATH_TO_CSV_FILE.csv
 
 You can find a sample CSV file in in:
-  factory_setup/test_data/shopfloor/sample.csv
+  factory_setup/test_data/shopfloor/simple.csv
 """
 
 import csv
@@ -42,8 +42,8 @@ class ShopFloor(shopfloor.ShopFloorBase):
     self.data_store = LoadCsvData(config)
     logging.warn("Loaded %d entries from %s.", len(self.data_store), config)
 
-    # In this sample implementation, we put uploaded reports in a "reports"
-    # folder where the input source (csv) file exists.
+    # In this implementation, we put uploaded reports in a "reports" folder
+    # where the input source (csv) file exists.
     self.reports_dir = os.path.join(os.path.realpath(os.path.dirname(config)),
                                     'reports')
     if not os.path.isdir(self.reports_dir):
