@@ -208,10 +208,12 @@ image_mount_partition() {
   if [ -z "$mount_opt" ]; then
     # by default, mount as read-only.
     mount_opt=",ro"
+  else
+    mount_opt=",$mount_opt"
   fi
 
   sudo mount \
-    -o "loop,offset=$((offset * 512)),sizelimit=$((size * 512)),$mount_opt" \
+    -o "loop,offset=$((offset * 512)),sizelimit=$((size * 512))$mount_opt" \
     $mount_ext \
     "$file" \
     "$mount_point"
