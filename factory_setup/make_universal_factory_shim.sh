@@ -118,8 +118,7 @@ layout_copy_partition() {
   alert "$(basename "$input_file"):$input_part =>" \
         "$(basename "$output_file"):$output_part"
 
-  if [ -n "$part_num" ]; then
-    # TODO(hungte) update partition type if available
+  if [ -n "$input_part" ]; then
     image_partition_copy "$input_file" "$input_part" \
                          "$output_file" "$output_part"
     # Update partition type information
