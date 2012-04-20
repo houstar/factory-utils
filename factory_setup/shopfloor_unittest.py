@@ -33,7 +33,8 @@ class ShopFloorServerTest(unittest.TestCase):
 
     cmd = ['python', os.path.join(self.base_dir, 'shopfloor_server.py'),
            '-q', '-a', 'localhost', '-p', str(self.server_port),
-           '-m', 'shopfloor.simple.ShopFloor', '-c', csv_work]
+           '-m', 'shopfloor.simple.ShopFloor', '-c', csv_work,
+           '-t', self.work_dir]
     self.process = subprocess.Popen(cmd)
     self.proxy = xmlrpclib.ServerProxy('http://localhost:%s' % self.server_port,
                                        allow_none=True)
@@ -108,7 +109,6 @@ class ShopFloorServerTest(unittest.TestCase):
     self.assertRaises(xmlrpclib.Fault, self.proxy.GetVPD, 'MAGICA')
     return True
 
-
   def testUploadReport(self):
     # Upload simple blob
     blob = 'Simple Blob'
@@ -125,6 +125,18 @@ class ShopFloorServerTest(unittest.TestCase):
   def testFinalize(self):
     self.proxy.Finalize('CR001024')
     self.assertRaises(xmlrpclib.Fault, self.proxy.Finalize, '0999')
+
+  def testGetTestMd5sum(self):
+    md5_source = os.path.join(self.base_dir, 'testdata', 'shopfloor',
+                              'latest.md5sum')
+    md5_work = os.path.join(self.work_dir, 'latest.md5sum')
+    shutil.copyfile(md5_source, md5_work)
+    self.assertEqual(self.proxy.GetTestMd5sum(),
+                     '0891a16c456fcc322b656d5f91fbf060')
+    os.remove(md5_work)
+
+  def testGetTestMd5sumWithoutMd5sumFile(self):
+    self.assertTrue(self.proxy.GetTestMd5sum() is None)
 
 if __name__ == '__main__':
   unittest.main()

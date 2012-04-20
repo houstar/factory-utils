@@ -33,11 +33,15 @@ import shopfloor
 class ShopFloor(shopfloor.ShopFloorBase):
   """Sample shop floor system, using CSV file as input."""
   NAME = "CSV-file based shop floor system"
-  VERSION = 1
+  VERSION = 2
+  LATEST_MD5SUM_FILENAME = 'latest.md5sum'
 
-  def __init__(self, config=None):
+  def __init__(self, config=None, testdir=None):
     if not (config and os.path.exists(config)):
       raise IOError("You must specify an existing CSV file by -c FILE.")
+    if not (testdir and os.path.isdir(testdir)):
+      raise IOError("You must specify a valid dynamic test directory.")
+
     logging.info("Parsing %s...", config)
     self.data_store = LoadCsvData(config)
     logging.warn("Loaded %d entries from %s.", len(self.data_store), config)
@@ -48,6 +52,9 @@ class ShopFloor(shopfloor.ShopFloorBase):
                                     'reports')
     if not os.path.isdir(self.reports_dir):
       os.mkdir(self.reports_dir)
+
+    # Dynamic test directory for holding autotests.
+    self.test_dir = os.path.realpath(testdir)
 
     # Try to touch some files inside directory, to make sure the directory is
     # writable, and everything I/O system is working fine.
@@ -94,6 +101,13 @@ class ShopFloor(shopfloor.ShopFloorBase):
     # Finalize is currently not implemented.
     self._CheckSerialNumber(serial)
     logging.warn("Finalized: %s", serial)
+
+  def GetTestMd5sum(self):
+    md5file = os.path.join(self.test_dir, self.LATEST_MD5SUM_FILENAME)
+    if not os.path.isfile(md5file):
+      return None
+    with open(md5file, 'r') as f:
+      return f.readline().strip()
 
 
 def LoadCsvData(filename):

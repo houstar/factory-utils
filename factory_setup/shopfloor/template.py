@@ -40,3 +40,7 @@ class ShopFloor(shopfloor.ShopFloorBase):
   def Finalize(self, serial):
     """See help(ShopFloorBase.Finalize)"""
     raise NotImplementedError('Finalize')
+
+  def GetTestMd5sum(self):
+    """See help(ShopFloorBase.GetTestMd5sum)"""
+    raise NotImplementedError('GetTestMd5sum')

@@ -81,6 +81,8 @@ def main():
                     'PACKAGE.MODULE.CLASS format. Ex: shopfloor.sample.Sample')
   parser.add_option('-c', '--config', dest='config', metavar='CONFIG',
                     help='configuration data for shop floor system')
+  parser.add_option('-t', '--testdir', dest='testdir', metavar='TESTDIR',
+                    help='dynamic test directory')
   parser.add_option('-v', '--verbose', action='count', dest='verbose',
                     help='increase message verbosity')
   parser.add_option('-q', '--quiet', action='store_true', dest='quiet',
@@ -107,7 +109,8 @@ def main():
   try:
     options.module = options.module
     logging.debug('Loading shop floor system module: %s', options.module)
-    instance = _LoadShopFloorModule(options.module)(options.config)
+    instance = _LoadShopFloorModule(options.module)(config=options.config,
+                                                    testdir=options.testdir)
     if not isinstance(instance, shopfloor.ShopFloorBase):
       logging.critical('Module does not inherit ShopFloorBase: %s',
                        options.module)

@@ -98,3 +98,11 @@ class ShopFloorBase(object):
       a XML-RPC server module.
     """
     raise NotImplementedError('Finalize')
+
+  def GetTestMd5sum(self):
+    """Gets the latest md5sum of dynamic test tarball.
+
+    Returns:
+      A string of md5sum.  None if no dynamic test tarball is installed.
+    """
+    raise NotImplementedError('GetTestMd5sum')
