@@ -49,6 +49,7 @@ class ShopFloorServerTest(unittest.TestCase):
   def tearDown(self):
     '''Terminates shop floor server'''
     self.process.terminate()
+    self.process.wait()
     shutil.rmtree(self.work_dir)
 
   def testGetHWID(self):
@@ -137,6 +138,7 @@ class ShopFloorServerTest(unittest.TestCase):
 
   def testGetTestMd5sumWithoutMd5sumFile(self):
     self.assertTrue(self.proxy.GetTestMd5sum() is None)
+
 
 if __name__ == '__main__':
   unittest.main()

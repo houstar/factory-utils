@@ -21,6 +21,8 @@ import optparse
 import shopfloor
 import SimpleXMLRPCServer
 
+from factory_update_server import FactoryUpdateServer
+
 
 _DEFAULT_SERVER_PORT = 8082
 # By default, this server is supposed to serve on same host running omaha
@@ -119,8 +121,15 @@ def main():
     logging.exception('Failed loading module: %s', options.module)
     exit(1)
 
-  logging.debug('Starting server...')
-  _RunAsServer(address=options.address, port=options.port, instance=instance)
+  update_server = FactoryUpdateServer(options.testdir)
+  try:
+    logging.debug('Starting factory update server...')
+    update_server.start()
+
+    logging.debug('Starting RPC server...')
+    _RunAsServer(address=options.address, port=options.port, instance=instance)
+  finally:
+    update_server.stop()
 
 
 if __name__ == '__main__':
