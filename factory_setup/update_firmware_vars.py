@@ -11,6 +11,7 @@ import optparse
 import os
 import shutil
 import struct
+import subprocess
 import sys
 import zlib
 
@@ -364,6 +365,27 @@ def _MakeOutput(input_path, output_path, fw_size):
   return outfile
 
 
+def _GetEnvVarAddr(image_file):
+  """Get environment variable section address from FMAP.
+
+  Args:
+    image_file: The image file to look for environment variable section.
+
+  Returns:
+    The address of RW_ENVIRONMENT section is returned.
+  """
+  try:
+    command = ["dump_fmap", "-p", image_file.name, "RW_ENVIRONMENT"]
+    stream = subprocess.Popen(command, stdout=subprocess.PIPE)
+    result = stream.communicate()[0].split()
+    if len(result) == 0:
+      raise ArgumentError("Cannot find RW_ENVIRONMENT section in FMAP.")
+    addr = int(result[1])
+    return addr
+  except OSError:
+    raise ArgumentError("Error calling dump_fmap.")
+
+
 def _PutEnvInFile(outfile, env_str, clobber_ok):
   """Put the given environment into the output file.
 
@@ -406,7 +428,8 @@ def _PutEnvInFile(outfile, env_str, clobber_ok):
         raise an exception if we detect and old environment.
   """
   env_size = len(env_str)
-  outfile.seek(-len(env_str), os.SEEK_END)
+  addr = _GetEnvVarAddr(outfile)
+  outfile.seek(addr, os.SEEK_SET)
 
   old_env_str = outfile.read(env_size)
   if old_env_str != ('\0' * env_size):
@@ -421,7 +444,7 @@ def _PutEnvInFile(outfile, env_str, clobber_ok):
     if not clobber_ok:
       raise ArgumentError("Old arguments will be clobbered; pass --force if OK")
 
-  outfile.seek(-len(env_str), os.SEEK_END)
+  outfile.seek(addr, os.SEEK_SET)
   outfile.write(env_str)
 
 
