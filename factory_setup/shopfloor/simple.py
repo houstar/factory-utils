@@ -33,8 +33,9 @@ import shopfloor
 class ShopFloor(shopfloor.ShopFloorBase):
   """Sample shop floor system, using CSV file as input."""
   NAME = "CSV-file based shop floor system"
-  VERSION = 2
+  VERSION = 3
   LATEST_MD5SUM_FILENAME = 'latest.md5sum'
+  EVENTS_DIR = 'events'
 
   def __init__(self, config=None, testdir=None):
     if not (config and os.path.exists(config)):
@@ -55,6 +56,13 @@ class ShopFloor(shopfloor.ShopFloorBase):
 
     # Dynamic test directory for holding autotests.
     self.test_dir = os.path.realpath(testdir)
+
+    # Put events uploaded from DUT in the EVENTS_DIR under where the config file
+    # exists.
+    self.events_dir = os.path.join(os.path.realpath(os.path.dirname(config)),
+                                   self.EVENTS_DIR)
+    if not os.path.isdir(self.events_dir):
+      os.mkdir(self.events_dir)
 
     # Try to touch some files inside directory, to make sure the directory is
     # writable, and everything I/O system is working fine.
@@ -108,6 +116,12 @@ class ShopFloor(shopfloor.ShopFloorBase):
       return None
     with open(md5file, 'r') as f:
       return f.readline().strip()
+
+  def UploadEvent(self, log_name, chunk):
+    log_file = os.path.join(self.events_dir, log_name)
+    with open(log_file, 'a') as f:
+      f.write(chunk)
+    return True
 
 
 def LoadCsvData(filename):

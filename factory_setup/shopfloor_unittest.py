@@ -139,6 +139,26 @@ class ShopFloorServerTest(unittest.TestCase):
   def testGetTestMd5sumWithoutMd5sumFile(self):
     self.assertTrue(self.proxy.GetTestMd5sum() is None)
 
+  def testUploadEvent(self):
+    # Check if events dir is created.
+    events_dir = os.path.join(self.work_dir, 'events')
+    self.assertTrue(os.path.isdir(events_dir))
+
+    # A new event file should be created.
+    self.assertTrue(self.proxy.UploadEvent('LOG_C835C718',
+                                           'PREAMBLE\n---\nEVENT_1\n'))
+    event_file = os.path.join(events_dir, 'LOG_C835C718')
+    self.assertTrue(os.path.isfile(event_file))
+
+    # Additional events should be appended to existing event files.
+    self.assertTrue(self.proxy.UploadEvent('LOG_C835C718',
+                                           '---\nEVENT_2\n'))
+    with open(event_file, 'r') as f:
+      events = [event.strip() for event in f.read().split('---')]
+      self.assertEqual(events[0], 'PREAMBLE')
+      self.assertEqual(events[1], 'EVENT_1')
+      self.assertEqual(events[2], 'EVENT_2')
+
 
 if __name__ == '__main__':
   unittest.main()

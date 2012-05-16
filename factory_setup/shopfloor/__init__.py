@@ -106,3 +106,21 @@ class ShopFloorBase(object):
       A string of md5sum.  None if no dynamic test tarball is installed.
     """
     raise NotImplementedError('GetTestMd5sum')
+
+  def UploadEvent(self, log_name, chunk):
+    """Uploads a chunk of events.
+
+    Args:
+      log_name: A string of the event log filename. Event logging module creates
+          event files with an unique identifier (uuid) as part of the filename.
+      chunk: A string containing one or more events. Events are in YAML format
+          and separated by a "---" as specified by YAML. A chunk contains one or
+          more events with separator.
+
+    Returns:
+      True on success.
+
+    Raises:
+      IOError if unable to save the chunk of events.
+    """
+    raise NotImplementedError('UploadEvent')

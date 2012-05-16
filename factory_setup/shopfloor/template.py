@@ -44,3 +44,7 @@ class ShopFloor(shopfloor.ShopFloorBase):
   def GetTestMd5sum(self):
     """See help(ShopFloorBase.GetTestMd5sum)"""
     raise NotImplementedError('GetTestMd5sum')
+
+  def UploadEvent(self, log_name, chunk):
+    """See help(ShopFloorBase.UploadEvent)"""
+    raise NotImplementedError('UploadEvent')
