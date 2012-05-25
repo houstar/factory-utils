@@ -38,6 +38,7 @@ class FactoryUpdateServerTest(unittest.TestCase):
     self.assertEqual(md5sum, '36a7e683170c4bf06982746a2de9cbee')
 
   def testUpdateFilesSetup(self):
+    time.sleep(1)
     # No latest.md5sum file at the beginning.
     md5file = os.path.join(self.work_dir, 'autotest/latest.md5sum')
     self.assertFalse(os.path.exists(md5file))
@@ -50,7 +51,7 @@ class FactoryUpdateServerTest(unittest.TestCase):
 
     # Check that latest.md5sum is created with correct value and update files
     # extracted.
-    self.assertTrue(os.path.isfile(md5file))
+    self.assertTrue(os.path.isfile(md5file), md5file)
     with open(md5file, 'r') as f:
       md5sum = f.readline().strip()
     self.assertEqual(md5sum, '36a7e683170c4bf06982746a2de9cbee')

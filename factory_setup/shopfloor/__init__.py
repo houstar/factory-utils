@@ -9,14 +9,16 @@ Every implementations should inherit ShopFloorBase and override the member
 functions to interact with their real shop floor system.
 """
 
-
+import os
 import xmlrpclib
 
 # In current implementation, we use xmlrpclib.Binary to prepare blobs.
 from xmlrpclib import Binary
 
+import factory_update_server
 
 class ShopFloorBase(object):
+  LATEST_MD5SUM_FILENAME = 'latest.md5sum'
 
   def __init__(self, config=None):
     """Initializes the shop floor system.
@@ -24,7 +26,8 @@ class ShopFloorBase(object):
     Args:
       config: String of command line parameter "-c" from server invocation.
     """
-    pass
+    self.update_dir = None
+    self.update_port = None
 
   def Ping(self):
     """Always returns true (for client to check if server is working)."""
@@ -105,7 +108,24 @@ class ShopFloorBase(object):
     Returns:
       A string of md5sum.  None if no dynamic test tarball is installed.
     """
-    raise NotImplementedError('GetTestMd5sum')
+    if not self.update_dir:
+      return None
+
+    md5file = os.path.join(self.update_dir,
+                           factory_update_server.UPDATE_DIR,
+                           self.LATEST_MD5SUM_FILENAME)
+    if not os.path.isfile(md5file):
+      return None
+    with open(md5file, 'r') as f:
+      return f.readline().strip()
+
+  def GetUpdatePort(self):
+    """Returns the port to use for rsync updates.
+
+    Returns:
+      The port, or None if there is no update server available.
+    """
+    return self.update_port
 
   def UploadEvent(self, log_name, chunk):
     """Uploads a chunk of events.

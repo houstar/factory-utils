@@ -37,6 +37,9 @@ use chroot = no
 def StartRsyncServer(port, state_dir, update_dir):
   configfile = os.path.join(state_dir, 'rsyncd.conf')
   pidfile = os.path.join(state_dir, 'rsyncd.pid')
+  if os.path.exists(pidfile):
+    # Since rsyncd will not overwrite it if it already exists
+    os.unlink(pidfile)
   logfile = os.path.join(state_dir, 'rsyncd.log')
   data = RSYNCD_CONFIG_TEMPLATE % dict(port=port,
                                        pidfile=pidfile,
@@ -47,12 +50,12 @@ def StartRsyncServer(port, state_dir, update_dir):
 
   p = subprocess.Popen(('rsync', '--daemon', '--no-detach',
                         '--config=%s' % configfile))
-  logging.debug('Rsync server (pid %d) started on port %d', p.pid, port)
+  logging.info('Rsync server (pid %d) started on port %d', p.pid, port)
   return p
 
 
 def StopRsyncServer(rsyncd_process):
-  logging.debug('Stopping rsync server (pid %d)', rsyncd_process.pid)
+  logging.info('Stopping rsync server (pid %d)', rsyncd_process.pid)
   rsyncd_process.terminate()
   rsyncd_process.wait()
   logging.debug('Rsync server stopped')
@@ -89,6 +92,8 @@ class HandleEvents(pyinotify.ProcessEvent):
       # Extract tarball.
       try:
         subprocess.check_call(('tar', '-xjf', event.pathname, '-C', subfolder))
+        with open(os.path.join(subfolder, 'MD5SUM'), 'w') as f:
+          f.write(md5sum)
       except subprocess.CalledProcessError:
         logging.error('Failed to extract update files to subfolder %s',
                       subfolder)
@@ -111,6 +116,7 @@ class FactoryUpdateServer(threading.Thread):
     threading.Thread.__init__(self)
     self.state_dir = state_dir
     self.update_dir = os.path.join(state_dir, UPDATE_DIR)
+    self.rsyncd_port = rsyncd_port
     if not os.path.exists(self.update_dir):
       os.mkdir(self.update_dir)
     self._stop_event = threading.Event()
@@ -130,7 +136,7 @@ class FactoryUpdateServer(threading.Thread):
           notifier.read_events()
     finally:
       notifier.stop()
-    logging.debug('Factory update server stopped')
+    logging.info('Factory update server stopped')
 
   def stop(self):
     StopRsyncServer(self._rsyncd)
