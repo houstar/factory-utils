@@ -90,15 +90,31 @@ class HandleEvents(pyinotify.ProcessEvent):
         return
 
       # Extract tarball.
+      success = False
       try:
-        subprocess.check_call(('tar', '-xjf', event.pathname, '-C', subfolder))
-        with open(os.path.join(subfolder, 'MD5SUM'), 'w') as f:
+        try:
+          subprocess.check_call(('tar', '-xjf', event.pathname,
+                                 '-C', subfolder))
+        except subprocess.CalledProcessError:
+          logging.error('Failed to extract update files to subfolder %s',
+                        subfolder)
+          return
+
+        autotest_dir = os.path.join(subfolder, UPDATE_DIR)
+        if not os.path.exists(autotest_dir):
+          logging.error('Tarball does not contain autotest directory')
+          return
+
+        with open(os.path.join(autotest_dir, 'MD5SUM'), 'w') as f:
           f.write(md5sum)
-      except subprocess.CalledProcessError:
-        logging.error('Failed to extract update files to subfolder %s',
-                      subfolder)
-        shutil.rmtree(subfolder)  # Clean up on error.
-        return
+
+        success = True
+      finally:
+        if not success:
+          try:
+            shutil.rmtree(subfolder)  # Clean up on error.
+          except:
+            pass  # Oh well, we tried
 
       # Update symlink and latest.md5sum.
       linkname = os.path.join(self.update_dir, LATEST_SYMLINK)
