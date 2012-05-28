@@ -27,6 +27,8 @@ import os
 import re
 import time
 
+from xmlrpclib import Binary
+
 import shopfloor
 
 
@@ -105,6 +107,9 @@ class ShopFloor(shopfloor.ShopFloorBase):
     logging.warn("Finalized: %s", serial)
 
   def UploadEvent(self, log_name, chunk):
+    if isinstance(chunk, Binary):
+      chunk = chunk.data
+
     log_file = os.path.join(self.events_dir, log_name)
     with open(log_file, 'a') as f:
       f.write(chunk)
