@@ -124,13 +124,15 @@ def main():
 
   if options.update_dir:
     if not os.path.isdir(options.update_dir):
-      raise IOError("Update directory %s does not exist" % update_dir)
+      raise IOError("Update directory %s does not exist" % options.update_dir)
 
     # Dynamic test directory for holding autotests.
     instance.update_dir = os.path.realpath(options.update_dir)
     update_server = FactoryUpdateServer(instance.update_dir)
     instance.update_port = update_server.rsyncd_port
   else:
+    instance.update_dir = None
+    instance.update_port = None
     update_server = None
 
   try:

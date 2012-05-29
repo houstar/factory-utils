@@ -26,8 +26,7 @@ class ShopFloorBase(object):
     Args:
       config: String of command line parameter "-c" from server invocation.
     """
-    self.update_dir = None
-    self.update_port = None
+    pass
 
   def Ping(self):
     """Always returns true (for client to check if server is working)."""
