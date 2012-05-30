@@ -44,7 +44,7 @@ class ShopFloor(shopfloor.ShopFloorBase):
 
     logging.info("Parsing %s...", config)
     self.data_store = LoadCsvData(config)
-    logging.warn("Loaded %d entries from %s.", len(self.data_store), config)
+    logging.info("Loaded %d entries from %s.", len(self.data_store), config)
 
     # In this implementation, we put uploaded reports in a "reports" folder
     # where the input source (csv) file exists.
@@ -104,7 +104,7 @@ class ShopFloor(shopfloor.ShopFloorBase):
   def Finalize(self, serial):
     # Finalize is currently not implemented.
     self._CheckSerialNumber(serial)
-    logging.warn("Finalized: %s", serial)
+    logging.info("Finalized: %s", serial)
 
   def UploadEvent(self, log_name, chunk):
     if isinstance(chunk, Binary):

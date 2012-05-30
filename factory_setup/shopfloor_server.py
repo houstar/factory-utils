@@ -64,7 +64,7 @@ def _RunAsServer(address, port, instance):
                                                  logRequests=False)
   server.register_introspection_functions()
   server.register_instance(instance)
-  logging.warn('Server started: http://%s:%s "%s" version %s',
+  logging.info('Server started: http://%s:%s "%s" version %s',
                address, port, instance.NAME, instance.VERSION)
   server.serve_forever()
 
@@ -98,9 +98,8 @@ def main():
   if not options.module:
     parser.error('You need to assign the module to be loaded (-m).')
 
-  verbosity_map = {0: logging.WARNING,
-                   1: logging.INFO,
-                   2: logging.DEBUG}
+  verbosity_map = {0: logging.INFO,
+                   1: logging.DEBUG}
   verbosity = verbosity_map.get(options.verbose or 0, logging.NOTSET)
   log_format = '%(asctime)s %(levelname)s '
   if options.verbose > 0:
