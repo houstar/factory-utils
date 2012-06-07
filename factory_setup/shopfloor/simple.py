@@ -106,15 +106,6 @@ class ShopFloor(shopfloor.ShopFloorBase):
     self._CheckSerialNumber(serial)
     logging.info("Finalized: %s", serial)
 
-  def UploadEvent(self, log_name, chunk):
-    if isinstance(chunk, Binary):
-      chunk = chunk.data
-
-    log_file = os.path.join(self.events_dir, log_name)
-    with open(log_file, 'a') as f:
-      f.write(chunk)
-    return True
-
 
 def LoadCsvData(filename):
   """Loads a CSV file and returns structured shop floor system data."""

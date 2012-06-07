@@ -80,6 +80,7 @@ def main():
                     default=_DEFAULT_SERVER_PORT,
                     help='port to bind (default: %default)')
   parser.add_option('-m', '--module', dest='module', metavar='MODULE',
+                    default='shopfloor.ShopFloorBase',
                     help='(required) shop floor system module to load, in '
                     'PACKAGE.MODULE.CLASS format. Ex: shopfloor.sample.Sample')
   parser.add_option('-c', '--config', dest='config', metavar='CONFIG',

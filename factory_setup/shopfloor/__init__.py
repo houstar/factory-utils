@@ -18,6 +18,8 @@ from xmlrpclib import Binary
 import factory_update_server
 
 class ShopFloorBase(object):
+  NAME = 'ShopFloorBase'
+  VERSION = 1
   LATEST_MD5SUM_FILENAME = 'latest.md5sum'
 
   def __init__(self, config=None):
@@ -142,4 +144,10 @@ class ShopFloorBase(object):
     Raises:
       IOError if unable to save the chunk of events.
     """
-    raise NotImplementedError('UploadEvent')
+    if isinstance(chunk, Binary):
+      chunk = chunk.data
+
+    log_file = os.path.join(self.events_dir, log_name)
+    with open(log_file, 'a') as f:
+      f.write(chunk)
+    return True
