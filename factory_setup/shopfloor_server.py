@@ -138,13 +138,13 @@ def main():
   try:
     if update_server:
       logging.debug('Starting factory update server...')
-      update_server.start()
+      update_server.Start()
 
     logging.debug('Starting RPC server...')
     _RunAsServer(address=options.address, port=options.port, instance=instance)
   finally:
     if update_server:
-      update_server.stop()
+      update_server.Stop()
 
 
 if __name__ == '__main__':
