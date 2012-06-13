@@ -126,13 +126,15 @@ class DevServerRoot(object):
 
 
 if __name__ == '__main__':
+  base_path = os.path.dirname(os.path.abspath(sys.argv[0]))
   usage = 'usage: %prog [options]'
   parser = optparse.OptionParser(usage)
   parser.add_option('--data_dir', dest='data_dir',
                     help='Writable directory where static lives',
-                    default=os.path.dirname(os.path.abspath(sys.argv[0])))
+                    default=base_path)
   parser.add_option('--factory_config', dest='factory_config',
-                    help='Config file for serving images from factory floor.')
+                    help='Config file for serving images from factory floor.',
+                    default=base_path + "/miniomaha.conf")
   parser.add_option('--port', default=8080,
                     help='Port for the dev server to use.')
   parser.add_option('--proxy_port', default=None,
