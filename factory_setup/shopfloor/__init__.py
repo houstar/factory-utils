@@ -113,7 +113,7 @@ class ShopFloorBase(object):
       return None
 
     md5file = os.path.join(self.update_dir,
-                           factory_update_server.UPDATE_DIR,
+                           factory_update_server.FACTORY_DIR,
                            self.LATEST_MD5SUM_FILENAME)
     if not os.path.isfile(md5file):
       return None

@@ -87,7 +87,7 @@ def main():
                     help='configuration data for shop floor system')
   parser.add_option('-u', '--update-dir', dest='update_dir',
                     metavar='UPDATEDIR',
-                    help='directory that may contain updated autotest.tar.bz2')
+                    help='directory that may contain updated factory.tar.bz2')
   parser.add_option('-v', '--verbose', action='count', dest='verbose',
                     help='increase message verbosity')
   parser.add_option('-q', '--quiet', action='store_true', dest='quiet',
@@ -126,7 +126,7 @@ def main():
     if not os.path.isdir(options.update_dir):
       raise IOError("Update directory %s does not exist" % options.update_dir)
 
-    # Dynamic test directory for holding autotests.
+    # Dynamic test directory for holding updates.
     instance.update_dir = os.path.realpath(options.update_dir)
     update_server = FactoryUpdateServer(instance.update_dir)
     instance.update_port = update_server.rsyncd_port

@@ -6,9 +6,9 @@
 
 The factory update server is implemented as a thread to be started by
 shop floor server.  It monitors the given state_dir and detects
-autotest.tar.bz2 file changes and then sets up the new update files
-into autotest_dir (under state_dir).  It also starts an rsync server
-to serve autotest_dir for clients to fetch update files.
+factory.tar.bz2 file changes and then sets up the new update files
+into factory_dir (under state_dir).  It also starts an rsync server
+to serve factory_dir for clients to fetch update files.
 '''
 
 import errno
@@ -20,8 +20,9 @@ import threading
 import time
 
 
+FACTORY_DIR = 'factory'
 AUTOTEST_DIR = 'autotest'
-TARBALL_NAME = 'autotest.tar.bz2'
+TARBALL_NAME = 'factory.tar.bz2'
 LATEST_SYMLINK = 'latest'
 LATEST_MD5SUM = 'latest.md5sum'
 MD5SUM = 'MD5SUM'
@@ -30,13 +31,13 @@ RSYNCD_CONFIG_TEMPLATE = '''port = %(port)d
 pid file = %(pidfile)s
 log file = %(logfile)s
 use chroot = no
-[autotest]
-  path = %(autotest_dir)s
+[factory]
+  path = %(factory_dir)s
   read only = yes
 '''
 
 
-def StartRsyncServer(port, state_dir, autotest_dir):
+def StartRsyncServer(port, state_dir, factory_dir):
   configfile = os.path.join(state_dir, 'rsyncd.conf')
   pidfile = os.path.join(state_dir, 'rsyncd.pid')
   if os.path.exists(pidfile):
@@ -46,7 +47,7 @@ def StartRsyncServer(port, state_dir, autotest_dir):
   data = RSYNCD_CONFIG_TEMPLATE % dict(port=port,
                                        pidfile=pidfile,
                                        logfile=logfile,
-                                       autotest_dir=autotest_dir)
+                                       factory_dir=factory_dir)
   with open(configfile, 'w') as f:
     f.write(data)
 
@@ -86,13 +87,13 @@ class FactoryUpdateServer():
   def __init__(self, state_dir, rsyncd_port=DEFAULT_RSYNCD_PORT,
                poll_interval_sec=1):
     self.state_dir = state_dir
-    self.autotest_dir = os.path.join(state_dir, AUTOTEST_DIR)
+    self.factory_dir = os.path.join(state_dir, FACTORY_DIR)
     self.rsyncd_port = rsyncd_port
-    if not os.path.exists(self.autotest_dir):
-      os.mkdir(self.autotest_dir)
+    if not os.path.exists(self.factory_dir):
+      os.mkdir(self.factory_dir)
     self.poll_interval_sec = poll_interval_sec
     self._stop_event = threading.Event()
-    self._rsyncd = StartRsyncServer(rsyncd_port, state_dir, self.autotest_dir)
+    self._rsyncd = StartRsyncServer(rsyncd_port, state_dir, self.factory_dir)
     self._tarball_path = os.path.join(self.state_dir, TARBALL_NAME)
 
     self._thread = None
@@ -133,8 +134,8 @@ class FactoryUpdateServer():
     os.rename(new_tarball_path, final_tarball_path)
 
     # Create subfolder to hold tarball contents.
-    final_subfolder = os.path.join(self.autotest_dir, md5sum)
-    final_md5sum = os.path.join(final_subfolder, AUTOTEST_DIR, MD5SUM)
+    final_subfolder = os.path.join(self.factory_dir, md5sum)
+    final_md5sum = os.path.join(final_subfolder, FACTORY_DIR, MD5SUM)
     if os.path.exists(final_subfolder):
       if not (os.path.exists(final_md5sum) and
               open(final_md5sum).read().strip() == md5sum):
@@ -153,7 +154,7 @@ class FactoryUpdateServer():
       success = False
       try:
         try:
-          logging.info('Staged into %s', new_subfolder)
+          logging.info('Staging into %s', new_subfolder)
           subprocess.check_call(('tar', '-xjf', final_tarball_path,
                                  '-C', new_subfolder))
         except subprocess.CalledProcessError:
@@ -161,12 +162,15 @@ class FactoryUpdateServer():
                         new_subfolder)
           return
 
-        autotest_dir = os.path.join(new_subfolder, AUTOTEST_DIR)
-        if not os.path.exists(autotest_dir):
-          logging.error('Tarball does not contain autotest directory')
+        missing_dirs = [
+          d for d in (FACTORY_DIR, AUTOTEST_DIR)
+          if not os.path.exists(os.path.join(new_subfolder, d))]
+        if missing_dirs:
+          logging.error('Tarball is missing directories: %r', missing_dirs)
           return
 
-        with open(os.path.join(autotest_dir, MD5SUM), 'w') as f:
+        factory_dir = os.path.join(new_subfolder, FACTORY_DIR)
+        with open(os.path.join(factory_dir, MD5SUM), 'w') as f:
           f.write(md5sum)
 
         # Extracted and verified.  Move it in place.
@@ -182,11 +186,11 @@ class FactoryUpdateServer():
           shutil.rmtree(final_subfolder, ignore_errors=True)
 
     # Update symlink and latest.md5sum.
-    linkname = os.path.join(self.autotest_dir, LATEST_SYMLINK)
+    linkname = os.path.join(self.factory_dir, LATEST_SYMLINK)
     if os.path.islink(linkname):
       os.remove(linkname)
     os.symlink(md5sum, linkname)
-    with open(os.path.join(self.autotest_dir, LATEST_MD5SUM), 'w') as f:
+    with open(os.path.join(self.factory_dir, LATEST_MD5SUM), 'w') as f:
       f.write(md5sum)
     logging.info('Update files (%s) setup complete', md5sum)
 
