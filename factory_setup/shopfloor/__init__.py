@@ -22,6 +22,8 @@ class ShopFloorBase(object):
   VERSION = 1
   LATEST_MD5SUM_FILENAME = 'latest.md5sum'
 
+  events_dir = 'events'
+
   def __init__(self, config=None):
     """Initializes the shop floor system.
 
@@ -144,6 +146,9 @@ class ShopFloorBase(object):
     Raises:
       IOError if unable to save the chunk of events.
     """
+    if not os.path.exists(self.events_dir):
+      os.makedirs(self.events_dir)
+
     if isinstance(chunk, Binary):
       chunk = chunk.data
 
