@@ -10,6 +10,7 @@ functions to interact with their real shop floor system.
 """
 
 import os
+import time
 import xmlrpclib
 
 # In current implementation, we use xmlrpclib.Binary to prepare blobs.
@@ -19,7 +20,7 @@ import factory_update_server
 
 class ShopFloorBase(object):
   NAME = 'ShopFloorBase'
-  VERSION = 1
+  VERSION = 2
   LATEST_MD5SUM_FILENAME = 'latest.md5sum'
 
   events_dir = 'events'
@@ -156,3 +157,7 @@ class ShopFloorBase(object):
     with open(log_file, 'a') as f:
       f.write(chunk)
     return True
+
+  def GetTime(self):
+    """Returns the current time in seconds since the epoch."""
+    return time.time()
