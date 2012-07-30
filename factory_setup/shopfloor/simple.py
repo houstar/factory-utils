@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium OS Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -33,32 +33,24 @@ import shopfloor
 
 
 class ShopFloor(shopfloor.ShopFloorBase):
-  """Sample shop floor system, using CSV file as input."""
+  """Sample shop floor system, using CSV file as input.
+
+  Device data is read from a 'devices.csv' file in the data directory.
+  """
   NAME = "CSV-file based shop floor system"
-  VERSION = 3
-  EVENTS_DIR = 'events'
+  VERSION = 4
 
-  def __init__(self, config=None):
-    if not (config and os.path.exists(config)):
-      raise IOError("You must specify an existing CSV file by -c FILE.")
+  def Init(self):
+    devices_csv = os.path.join(self.data_dir, 'devices.csv')
+    logging.info("Parsing %s...", devices_csv)
+    self.data_store = LoadCsvData(devices_csv)
+    logging.info("Loaded %d entries from %s.",
+                 len(self.data_store), devices_csv)
 
-    logging.info("Parsing %s...", config)
-    self.data_store = LoadCsvData(config)
-    logging.info("Loaded %d entries from %s.", len(self.data_store), config)
-
-    # In this implementation, we put uploaded reports in a "reports" folder
-    # where the input source (csv) file exists.
-    self.reports_dir = os.path.join(os.path.realpath(os.path.dirname(config)),
-                                    'reports')
+    # Put uploaded reports in a "reports" folder inside data_dir.
+    self.reports_dir = os.path.join(self.data_dir, 'reports')
     if not os.path.isdir(self.reports_dir):
       os.mkdir(self.reports_dir)
-
-    # Put events uploaded from DUT in the EVENTS_DIR under where the config file
-    # exists.
-    self.events_dir = os.path.join(os.path.realpath(os.path.dirname(config)),
-                                   self.EVENTS_DIR)
-    if not os.path.isdir(self.events_dir):
-      os.mkdir(self.events_dir)
 
     # Try to touch some files inside directory, to make sure the directory is
     # writable, and everything I/O system is working fine.
@@ -82,6 +74,13 @@ class ShopFloor(shopfloor.ShopFloorBase):
   def GetVPD(self, serial):
     self._CheckSerialNumber(serial)
     return self.data_store[serial]['vpd']
+
+  def GetRegistrationCodeMap(self, serial):
+    self._CheckSerialNumber(serial)
+    registration_code_map = self.data_store[serial]['registration_code_map']
+    self.LogRegistrationCodeMap(self.data_store[serial]['hwid'],
+                                registration_code_map)
+    return registration_code_map
 
   def UploadReport(self, serial, report_blob, report_name=None):
     def is_gzip_blob(blob):
@@ -112,17 +111,21 @@ def LoadCsvData(filename):
   # Required fields.
   KEY_SERIAL_NUMBER = 'serial_number'
   KEY_HWID = 'hwid'
+  KEY_REGISTRATION_CODE_USER = 'registration_code_user'
+  KEY_REGISTRATION_CODE_GROUP = 'registration_code_group'
+
   # Optional fields.
   PREFIX_RO_VPD = 'ro_vpd_'
   PREFIX_RW_VPD = 'rw_vpd_'
   VPD_PREFIXES = (PREFIX_RO_VPD, PREFIX_RW_VPD)
 
   REQUIRED_KEYS = (KEY_SERIAL_NUMBER, KEY_HWID)
+  OPTIONAL_KEYS = (KEY_REGISTRATION_CODE_USER, KEY_REGISTRATION_CODE_GROUP)
   OPTIONAL_PREFIXES = VPD_PREFIXES
 
   def check_field_name(name):
     """Checks if argument is an valid input name."""
-    if name in REQUIRED_KEYS:
+    if name in REQUIRED_KEYS or name in OPTIONAL_KEYS:
       return True
     for prefix in OPTIONAL_PREFIXES:
       if name.startswith(prefix):
@@ -142,6 +145,15 @@ def LoadCsvData(filename):
           continue
         vpd[key_type][key_name.strip()] = value.strip()
     return vpd
+
+  def build_registration_code_map(source):
+    """Builds registration_code_map structure.
+
+    Returns:
+      A dict containing 'user' and 'group' keys.
+    """
+    return {'user': source.get(KEY_REGISTRATION_CODE_USER),
+            'group': source.get(KEY_REGISTRATION_CODE_GROUP)}
 
   data = {}
   with open(filename, 'rb') as source:
@@ -166,6 +178,8 @@ def LoadCsvData(filename):
         if not check_field_name(field):
           raise ValueError("Invalid field: %s" % field)
 
-      entry = {'hwid': hwid, 'vpd': build_vpd(row)}
+      entry = {'hwid': hwid,
+               'vpd': build_vpd(row),
+               'registration_code_map': build_registration_code_map(row)}
       data[serial_number] = entry
   return data

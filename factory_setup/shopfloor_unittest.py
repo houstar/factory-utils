@@ -1,12 +1,13 @@
 #!/usr/bin/env python
 
-# Copyright (c) 2011 The Chromium OS Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 """Unit tests for shop floor server."""
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -25,16 +26,20 @@ class ShopFloorServerTest(unittest.TestCase):
     '''Starts shop floor server and creates client proxy.'''
     self.server_port = shopfloor_server._DEFAULT_SERVER_PORT
     self.base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
-    self.work_dir = tempfile.mkdtemp(prefix='sft')
+    self.data_dir = tempfile.mkdtemp(prefix='shopfloor_data.')
+    self.registration_code_log = (
+        os.path.join(self.data_dir, shopfloor.REGISTRATION_CODES_CSV))
     csv_source = os.path.join(self.base_dir, 'testdata', 'shopfloor',
-                              'simple.csv')
-    csv_work = os.path.join(self.work_dir, 'simple.csv')
+                              'devices.csv')
+    csv_work = os.path.join(self.data_dir, 'devices.csv')
     shutil.copyfile(csv_source, csv_work)
+    os.mkdir(os.path.join(self.data_dir, shopfloor.UPDATE_DIR))
+    os.mkdir(os.path.join(self.data_dir, shopfloor.UPDATE_DIR, 'factory'))
 
     cmd = ['python', os.path.join(self.base_dir, 'shopfloor_server.py'),
            '-q', '-a', 'localhost', '-p', str(self.server_port),
-           '-m', 'shopfloor.simple.ShopFloor', '-c', csv_work,
-           '-t', self.work_dir]
+           '-m', 'shopfloor.simple.ShopFloor',
+           '-d', self.data_dir]
     self.process = subprocess.Popen(cmd)
     self.proxy = xmlrpclib.ServerProxy('http://localhost:%s' % self.server_port,
                                        allow_none=True)
@@ -42,15 +47,18 @@ class ShopFloorServerTest(unittest.TestCase):
     for i in xrange(10):
       try:
         self.proxy.Ping()
+        break
       except:
         time.sleep(0.1)
         continue
+    else:
+      self.fail('Server never came up')
 
   def tearDown(self):
     '''Terminates shop floor server'''
     self.process.terminate()
     self.process.wait()
-    shutil.rmtree(self.work_dir)
+    shutil.rmtree(self.data_dir)
 
   def testGetHWID(self):
     # Valid HWIDs range from CR001001 to CR001025
@@ -94,7 +102,7 @@ class ShopFloorServerTest(unittest.TestCase):
     self.assertEqual(vpd['ro']['initial_locale'], 'nl')
     self.assertEqual(vpd['ro']['initial_timezone'], 'Europe/Amsterdam')
     self.assertEqual(vpd['rw']['wifi_mac'], '0b:ad:f0:0d:15:10')
-    self.assertTrue('cellular_mac' not in vpd['rw'])
+    self.assertEqual(vpd['rw']['cellular_mac'], '')
 
     # Checks MAC addresses
     for i in range(25):
@@ -114,7 +122,8 @@ class ShopFloorServerTest(unittest.TestCase):
     # Upload simple blob
     blob = 'Simple Blob'
     report_name = 'simple_blob.rpt'
-    report_path = os.path.join(self.work_dir, 'reports', report_name)
+    report_path = os.path.join(self.data_dir, shopfloor.REPORTS_DIR,
+                               report_name)
     self.proxy.UploadReport('CR001020', shopfloor.Binary('Simple Blob'),
                             report_name)
     self.assertTrue(os.path.exists(report_path))
@@ -128,10 +137,10 @@ class ShopFloorServerTest(unittest.TestCase):
     self.assertRaises(xmlrpclib.Fault, self.proxy.Finalize, '0999')
 
   def testGetTestMd5sum(self):
-    md5_source = os.path.join(self.base_dir, 'testdata', 'shopfloor',
-                              'latest.md5sum')
-    md5_work = os.path.join(self.work_dir, 'latest.md5sum')
-    shutil.copyfile(md5_source, md5_work)
+    md5_work = os.path.join(self.data_dir, shopfloor.UPDATE_DIR,
+                            'factory', 'latest.md5sum')
+    with open(md5_work, "w") as f:
+      f.write('0891a16c456fcc322b656d5f91fbf060')
     self.assertEqual(self.proxy.GetTestMd5sum(),
                      '0891a16c456fcc322b656d5f91fbf060')
     os.remove(md5_work)
@@ -139,9 +148,27 @@ class ShopFloorServerTest(unittest.TestCase):
   def testGetTestMd5sumWithoutMd5sumFile(self):
     self.assertTrue(self.proxy.GetTestMd5sum() is None)
 
+  def testGetRegistrationCodeMap(self):
+    self.assertEquals(
+        {'user': ('000000000000000000000000000000000000'
+                  '0000000000000000000000000000190a55ad'),
+         'group': ('010101010101010101010101010101010101'
+                   '010101010101010101010101010162319fcc')},
+        self.proxy.GetRegistrationCodeMap('CR001001'))
+
+    # Make sure it was logged.
+    log = open(self.registration_code_log).read()
+    self.assertTrue(re.match(
+        '^MAGICA MADOKA A-A 1214,'
+        '000000000000000000000000000000000000'
+        '0000000000000000000000000000190a55ad,'
+        '010101010101010101010101010101010101'
+        '010101010101010101010101010162319fcc,'
+        '\d\d\d\d-\d\d-\d\d \d\d:\d\d:\d\d\n', log), repr(log))
+
   def testUploadEvent(self):
     # Check if events dir is created.
-    events_dir = os.path.join(self.work_dir, 'events')
+    events_dir = os.path.join(self.data_dir, shopfloor.EVENTS_DIR)
     self.assertTrue(os.path.isdir(events_dir))
 
     # A new event file should be created.

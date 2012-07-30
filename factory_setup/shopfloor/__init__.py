@@ -1,4 +1,4 @@
-# Copyright (c) 2011 The Chromium OS Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -9,6 +9,8 @@ Every implementations should inherit ShopFloorBase and override the member
 functions to interact with their real shop floor system.
 """
 
+import csv
+import logging
 import os
 import time
 import xmlrpclib
@@ -18,18 +20,66 @@ from xmlrpclib import Binary
 
 import factory_update_server
 
+
+EVENTS_DIR = 'events'
+REPORTS_DIR = 'reports'
+UPDATE_DIR = 'update'
+REGISTRATION_CODES_CSV = 'registration_codes.csv'
+
+
 class ShopFloorBase(object):
+  """Base class for shopfloor servers.
+
+  Properties:
+    config: The configuration data provided by the '-c' argument to
+      shopfloor_server.
+    data_dir: The top-level directory for shopfloor data.
+  """
+
   NAME = 'ShopFloorBase'
-  VERSION = 2
-  LATEST_MD5SUM_FILENAME = 'latest.md5sum'
+  VERSION = 4
 
-  events_dir = 'events'
+  def _InitBase(self):
+    """Initializes the base class."""
+    self._registration_code_log = open(
+        os.path.join(self.data_dir, REGISTRATION_CODES_CSV), "ab", 0)
+    class Dialect(csv.excel):
+      lineterminator = '\n'
+    self._registration_code_writer = csv.writer(self._registration_code_log,
+                                                dialect=Dialect)
 
-  def __init__(self, config=None):
+    # Put events uploaded from DUT in the "events" directory in data_dir.
+    self._events_dir = os.path.join(self.data_dir, EVENTS_DIR)
+    if not os.path.isdir(self._events_dir):
+      os.mkdir(self._events_dir)
+
+    # Dynamic test directory for holding updates is called "update" in data_dir.
+    update_dir = os.path.join(self.data_dir, UPDATE_DIR)
+    if os.path.exists(update_dir):
+      self.update_dir = os.path.realpath(update_dir)
+      self.update_server = factory_update_server.FactoryUpdateServer(
+          self.update_dir)
+    else:
+      logging.warn('Update directory %s does not exist; '
+                   'disabling update server.', update_dir)
+      self.update_dir = None
+      self.update_server = None
+
+  def _StartBase(self):
+    """Starts the base class."""
+    if self.update_server:
+      logging.debug('Starting factory update server...')
+      self.update_server.Start()
+
+  def _StopBase(self):
+    """Stops the base class."""
+    if self.update_server:
+      self.update_server.Stop()
+
+  def Init(self):
     """Initializes the shop floor system.
 
-    Args:
-      config: String of command line parameter "-c" from server invocation.
+    Subclasses should implement this rather than __init__.
     """
     pass
 
@@ -106,6 +156,26 @@ class ShopFloorBase(object):
     """
     raise NotImplementedError('Finalize')
 
+  def GetRegistrationCodeMap(self, serial):
+    """Returns the registration code map for the given serial number.
+
+    Returns:
+      {'user': registration_code, 'group': group_code}
+
+    Raises:
+      ValueError if serial is invalid, or other exceptions defined by individual
+      modules. Note this will be converted to xmlrpclib.Fault when being used as
+      a XML-RPC server module.
+    """
+    raise NotImplementedError('GetRegistrationCode')
+
+  def LogRegistrationCodeMap(self, hwid, registration_code_map):
+    """Logs that a particular registration code has been used."""
+    self._registration_code_writer.writerow(
+        [hwid, registration_code_map['user'], registration_code_map['group'],
+         time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime())])
+    os.fdatasync(self._registration_code_log.fileno())
+
   def GetTestMd5sum(self):
     """Gets the latest md5sum of dynamic test tarball.
 
@@ -117,7 +187,7 @@ class ShopFloorBase(object):
 
     md5file = os.path.join(self.update_dir,
                            factory_update_server.FACTORY_DIR,
-                           self.LATEST_MD5SUM_FILENAME)
+                           factory_update_server.LATEST_MD5SUM)
     if not os.path.isfile(md5file):
       return None
     with open(md5file, 'r') as f:
@@ -129,7 +199,7 @@ class ShopFloorBase(object):
     Returns:
       The port, or None if there is no update server available.
     """
-    return self.update_port
+    return self.update_server.rsyncd_port if self.update_server else None
 
   def UploadEvent(self, log_name, chunk):
     """Uploads a chunk of events.
@@ -147,13 +217,13 @@ class ShopFloorBase(object):
     Raises:
       IOError if unable to save the chunk of events.
     """
-    if not os.path.exists(self.events_dir):
-      os.makedirs(self.events_dir)
+    if not os.path.exists(self._events_dir):
+      os.makedirs(self._events_dir)
 
     if isinstance(chunk, Binary):
       chunk = chunk.data
 
-    log_file = os.path.join(self.events_dir, log_name)
+    log_file = os.path.join(self._events_dir, log_name)
     with open(log_file, 'a') as f:
       f.write(chunk)
     return True

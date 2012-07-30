@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-# Copyright (c) 2011 The Chromium OS Authors. All rights reserved.
+# Copyright (c) 2012 The Chromium OS Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
@@ -11,7 +11,7 @@ To use it, invoke as a standalone program and assign the shop floor system
 module you want to use (modules are located in "shopfloor" subdirectory).
 
 Example:
-  ./shopfloor_server -m shopfloor.sample.SampleShopFloor
+  ./shopfloor_server -m shopfloor.simple.ShopFloor
 '''
 
 
@@ -21,8 +21,6 @@ import optparse
 import os
 import shopfloor
 import SimpleXMLRPCServer
-
-from factory_update_server import FactoryUpdateServer
 
 
 _DEFAULT_SERVER_PORT = 8082
@@ -71,7 +69,6 @@ def _RunAsServer(address, port, instance):
 
 def main():
   '''Main entry when being invoked by command line.'''
-
   parser = optparse.OptionParser()
   parser.add_option('-a', '--address', dest='address', metavar='ADDR',
                     default=_DEFAULT_SERVER_ADDRESS,
@@ -81,13 +78,14 @@ def main():
                     help='port to bind (default: %default)')
   parser.add_option('-m', '--module', dest='module', metavar='MODULE',
                     default='shopfloor.ShopFloorBase',
-                    help='(required) shop floor system module to load, in '
-                    'PACKAGE.MODULE.CLASS format. Ex: shopfloor.sample.Sample')
+                    help='shop floor system module to load, in '
+                    'PACKAGE.MODULE.CLASS format. Ex: '
+                    'shopfloor.simple.ShopFloor')
   parser.add_option('-c', '--config', dest='config', metavar='CONFIG',
                     help='configuration data for shop floor system')
-  parser.add_option('-u', '--update-dir', dest='update_dir',
-                    metavar='UPDATEDIR',
-                    help='directory that may contain updated factory.tar.bz2')
+  parser.add_option('-d', '--data-dir', dest='data_dir', metavar='DIR',
+                    default=os.path.dirname(os.path.realpath(__file__)),
+                    help='data directory for shop floor system')
   parser.add_option('-v', '--verbose', action='count', dest='verbose',
                     help='increase message verbosity')
   parser.add_option('-q', '--quiet', action='store_true', dest='quiet',
@@ -108,43 +106,31 @@ def main():
   log_format += '%(message)s'
   logging.basicConfig(level=verbosity, format=log_format)
   if options.quiet:
-    logging.disable(logging.CRITICAL)
+    logging.disable(logging.INFO)
 
   try:
-    options.module = options.module
     logging.debug('Loading shop floor system module: %s', options.module)
-    instance = _LoadShopFloorModule(options.module)(config=options.config)
+    instance = _LoadShopFloorModule(options.module)()
+
     if not isinstance(instance, shopfloor.ShopFloorBase):
       logging.critical('Module does not inherit ShopFloorBase: %s',
                        options.module)
       exit(1)
+
+    instance.data_dir = options.data_dir
+    instance.config = options.config
+    instance._InitBase()
+    instance.Init()
   except:
     logging.exception('Failed loading module: %s', options.module)
     exit(1)
 
-  if options.update_dir:
-    if not os.path.isdir(options.update_dir):
-      raise IOError("Update directory %s does not exist" % options.update_dir)
-
-    # Dynamic test directory for holding updates.
-    instance.update_dir = os.path.realpath(options.update_dir)
-    update_server = FactoryUpdateServer(instance.update_dir)
-    instance.update_port = update_server.rsyncd_port
-  else:
-    instance.update_dir = None
-    instance.update_port = None
-    update_server = None
-
   try:
-    if update_server:
-      logging.debug('Starting factory update server...')
-      update_server.Start()
-
+    instance._StartBase()
     logging.debug('Starting RPC server...')
     _RunAsServer(address=options.address, port=options.port, instance=instance)
   finally:
-    if update_server:
-      update_server.Stop()
+    instance._StopBase()
 
 
 if __name__ == '__main__':
