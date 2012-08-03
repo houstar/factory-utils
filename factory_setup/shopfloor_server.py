@@ -78,14 +78,17 @@ def main():
                     help='port to bind (default: %default)')
   parser.add_option('-m', '--module', dest='module', metavar='MODULE',
                     default='shopfloor.ShopFloorBase',
-                    help='shop floor system module to load, in '
-                    'PACKAGE.MODULE.CLASS format. Ex: '
-                    'shopfloor.simple.ShopFloor')
+                    help=('shop floor system module to load, in '
+                          'PACKAGE.MODULE.CLASS format. E.g.: '
+                          'shopfloor.simple.ShopFloor (default: %default)'))
   parser.add_option('-c', '--config', dest='config', metavar='CONFIG',
                     help='configuration data for shop floor system')
   parser.add_option('-d', '--data-dir', dest='data_dir', metavar='DIR',
-                    default=os.path.dirname(os.path.realpath(__file__)),
-                    help='data directory for shop floor system')
+                    default=os.path.join(
+                        os.path.dirname(os.path.realpath(__file__)),
+                        'shopfloor_data'),
+                    help=('data directory for shop floor system '
+                          '(default: %default)'))
   parser.add_option('-v', '--verbose', action='count', dest='verbose',
                     help='increase message verbosity')
   parser.add_option('-q', '--quiet', action='store_true', dest='quiet',

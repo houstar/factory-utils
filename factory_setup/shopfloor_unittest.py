@@ -28,7 +28,7 @@ class ShopFloorServerTest(unittest.TestCase):
     self.base_dir = os.path.dirname(os.path.abspath(sys.argv[0]))
     self.data_dir = tempfile.mkdtemp(prefix='shopfloor_data.')
     self.registration_code_log = (
-        os.path.join(self.data_dir, shopfloor.REGISTRATION_CODES_CSV))
+        os.path.join(self.data_dir, shopfloor.REGISTRATION_CODE_LOG_CSV))
     csv_source = os.path.join(self.base_dir, 'testdata', 'shopfloor',
                               'devices.csv')
     csv_work = os.path.join(self.data_dir, 'devices.csv')

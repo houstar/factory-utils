@@ -24,7 +24,7 @@ import factory_update_server
 EVENTS_DIR = 'events'
 REPORTS_DIR = 'reports'
 UPDATE_DIR = 'update'
-REGISTRATION_CODES_CSV = 'registration_codes.csv'
+REGISTRATION_CODE_LOG_CSV = 'registration_code_log.csv'
 
 
 class ShopFloorBase(object):
@@ -41,8 +41,13 @@ class ShopFloorBase(object):
 
   def _InitBase(self):
     """Initializes the base class."""
+    if not os.path.exists(self.data_dir):
+      logging.warn('Data directory %s does not exist; creating it',
+                   self.data_dir)
+      os.makedirs(self.data_dir)
+
     self._registration_code_log = open(
-        os.path.join(self.data_dir, REGISTRATION_CODES_CSV), "ab", 0)
+        os.path.join(self.data_dir, REGISTRATION_CODE_LOG_CSV), "ab", 0)
     class Dialect(csv.excel):
       lineterminator = '\n'
     self._registration_code_writer = csv.writer(self._registration_code_log,
