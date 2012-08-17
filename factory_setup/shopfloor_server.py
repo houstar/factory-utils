@@ -21,6 +21,7 @@ import logging
 import optparse
 import os
 import shopfloor
+import socket
 import SimpleXMLRPCServer
 from subprocess import Popen, PIPE
 
@@ -112,6 +113,12 @@ def main():
   logging.basicConfig(level=verbosity, format=log_format)
   if options.quiet:
     logging.disable(logging.INFO)
+
+  # Disable all DNS lookups, since otherwise the logging code may try to
+  # resolve IP addresses, which may delay request handling.
+  def FakeGetFQDN(name=''):
+    return name or 'localhost'
+  socket.getfqdn = FakeGetFQDN
 
   try:
     logging.debug('Loading shop floor system module: %s', options.module)
