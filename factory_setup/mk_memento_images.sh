@@ -14,13 +14,14 @@ set -e
 # We need 2-3 non-zero parameters.
 if [ "$#" -lt 2 ] || [ "$#" -gt 3 ] || [ -z "$1" ] || [ -z "$2" ]; then
   echo "
-Usage: $0 kernel_partition_img[:index] rootfs_partition_img[:index] [output_dir]
+Usage: $0 kernel_partition_img[:index] rootfs_partition_img[:index] \
+          [output_file]
 
           Input parameters may be either a simple partition image file, or a
           disk image file name followed by ':' and target partition index number
 
-          If output_dir is omitted, the folder of kernel_partition_img will be
-          use.
+          If output_file is omitted, the folder of kernel_partition_img will be
+          used, and the output file will be named as 'update.gz'.
 
 Examples:
        $0 part_2 part_3
@@ -94,11 +95,10 @@ if [ "$KPART_SIZE" -gt $((16 * 1024 * 1024)) ]; then
 fi
 
 if [ "$#" = "3" ]; then
-  FINAL_OUT_DIR="$(readlink -f $3)"
+  FINAL_OUT_FILE="$(readlink -f $3)"
 else
-  FINAL_OUT_DIR="$(dirname "$(readlink -f $1)")"
+  FINAL_OUT_FILE="$(dirname "$(readlink -f $1)")/update.gz"
 fi
-FINAL_OUT_FILE="$FINAL_OUT_DIR/update.gz"
 echo "Output: $FINAL_OUT_FILE"
 
 # Update payload format:

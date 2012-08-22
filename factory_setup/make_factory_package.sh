@@ -372,14 +372,15 @@ prepare_dir() {
 }
 
 # Compresses kernel and rootfs of an imge file, and output its hash.
-# Usage:compress_and_hash_memento_image kernel rootfs
+# Usage:compress_and_hash_memento_image kernel rootfs output_file
 # Please see "mk_memento_images --help" for detail of parameter syntax
 compress_and_hash_memento_image() {
-  local kern="$1"
+  local kernel="$1"
   local rootfs="$2"
-  [ "$#" = "2" ] || die "Internal error: compress_and_hash_memento_image $*"
+  local output_file="$3"
+  [ "$#" = "3" ] || die "Internal error: compress_and_hash_memento_image $*"
 
-  "${SCRIPT_DIR}/mk_memento_images.sh" "$kern" "$rootfs" "." |
+  "${SCRIPT_DIR}/mk_memento_images.sh" "$kernel" "$rootfs" "$output_file" |
     grep hash |
     awk '{print $4}'
 }
@@ -563,60 +564,45 @@ generate_omaha() {
   echo "Output omaha image to ${OMAHA_DATA_DIR}"
   echo "Output omaha config to ${OMAHA_CONF}"
 
-  # Get the release image.
-  # TODO(hungte) deprecate pushd and use temporary folders
-  pushd "${RELEASE_DIR}" >/dev/null
-  prepare_dir "."
-
-  kernel="${RELEASE_KERNEL:-${RELEASE_IMAGE}:2}"
-  rootfs="${RELEASE_IMAGE}:3"
-  release_hash="$(compress_and_hash_memento_image "$kernel" "$rootfs")"
-  mv ./update.gz "${OMAHA_DATA_DIR}/rootfs-release.gz"
+  kernel="${RELEASE_KERNEL:-${FLAGS_release}:2}"
+  rootfs="${FLAGS_release}:3"
+  release_hash="$(compress_and_hash_memento_image "$kernel" "$rootfs" \
+                  "${OMAHA_DATA_DIR}/rootfs-release.gz")"
   echo "release: ${release_hash}"
 
-  oem_hash="$(compress_and_hash_partition "${RELEASE_IMAGE}" 8 "oem.gz")"
-  mv oem.gz "${OMAHA_DATA_DIR}"
+  oem_hash="$(compress_and_hash_partition "${FLAGS_release}" 8 \
+              "${OMAHA_DATA_DIR}/oem.gz")"
   echo "oem: ${oem_hash}"
 
-  popd >/dev/null
-
-  # Go to retrieve the factory test image.
-  pushd "${FACTORY_DIR}" >/dev/null
-  prepare_dir "."
-
-  kernel="${FACTORY_IMAGE}:2"
-  rootfs="${FACTORY_IMAGE}:3"
-  test_hash="$(compress_and_hash_memento_image "$kernel" "$rootfs")"
-  mv ./update.gz "${OMAHA_DATA_DIR}/rootfs-test.gz"
+  kernel="${FLAGS_factory}:2"
+  rootfs="${FLAGS_factory}:3"
+  test_hash="$(compress_and_hash_memento_image "$kernel" "$rootfs" \
+               "${OMAHA_DATA_DIR}/rootfs-test.gz")"
   echo "test: ${test_hash}"
 
-  state_hash="$(compress_and_hash_partition "${FACTORY_IMAGE}" 1 "state.gz")"
-  mv state.gz "${OMAHA_DATA_DIR}"
+  state_hash="$(compress_and_hash_partition "${FLAGS_factory}" 1 \
+                "${OMAHA_DATA_DIR}/state.gz")"
   echo "state: ${state_hash}"
 
-  efi_hash="$(compress_and_hash_partition "${FACTORY_IMAGE}" 12 "efi.gz")"
-  mv efi.gz "${OMAHA_DATA_DIR}"
+  efi_hash="$(compress_and_hash_partition "${FLAGS_factory}" 12 \
+              "${OMAHA_DATA_DIR}/efi.gz")"
   echo "efi: ${efi_hash}"
-
-  popd >/dev/null
 
   if [ -n "${FLAGS_firmware_updater}" ]; then
     firmware_hash="$(compress_and_hash_file "${FLAGS_firmware_updater}" \
-                     "firmware.gz")"
-    mv firmware.gz "${OMAHA_DATA_DIR}"
+                     "${OMAHA_DATA_DIR}/firmware.gz")"
     echo "firmware: ${firmware_hash}"
   fi
 
   if [ -n "${FLAGS_hwid_updater}" ]; then
-    hwid_hash="$(compress_and_hash_file "${FLAGS_hwid_updater}" "hwid.gz")"
-    mv hwid.gz "${OMAHA_DATA_DIR}"
+    hwid_hash="$(compress_and_hash_file "${FLAGS_hwid_updater}" \
+                 "${OMAHA_DATA_DIR}/hwid.gz")"
     echo "hwid: ${hwid_hash}"
   fi
 
   if [ -n "${FLAGS_complete_script}" ]; then
     complete_hash="$(compress_and_hash_file "${FLAGS_complete_script}" \
-                     "complete.gz")"
-    mv complete.gz "${OMAHA_DATA_DIR}"
+                     "${OMAHA_DATA_DIR}/complete.gz")"
     echo "complete: ${complete_hash}"
   fi
 
