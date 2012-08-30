@@ -10,3 +10,5 @@ executed in different environments:
 So all scripts must use only the libraries in same folder and not relying on any
 files in cros source tree (except chromeos-common.sh).
 
+Shopfloor scripts have been moved to ../shopfloor in the factory bundle;
+source code is located in the platform/factory repository.
