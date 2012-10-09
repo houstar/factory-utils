@@ -65,7 +65,10 @@ extract_firmware_updater() {
 main() {
   set -e
   trap on_exit EXIT
-  [ "$#" = 0 ] || flags_help
+  if [ "$#" != 0 ]; then
+    flags_help
+    exit 1
+  fi
 
   check_parameters
   # Check required tools.

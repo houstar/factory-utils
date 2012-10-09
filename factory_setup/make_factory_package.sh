@@ -782,7 +782,10 @@ check_empty_normal_params() {
 main() {
   set -e
   trap on_exit EXIT
-  [ "$#" = 0 ] || flags_help
+  if [ "$#" != 0 ]; then
+    flags_help
+    exit 1
+  fi
 
   if [ -n "$FLAGS_config" ]; then
     [ -z "$MFP_SUBPROCESS" ] ||
