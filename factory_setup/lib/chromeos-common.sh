@@ -1,1 +1,0 @@
-../../../installer/chromeos-common.sh
